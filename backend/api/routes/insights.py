@@ -67,7 +67,7 @@ async def generate_chart(request: ChartRequest):
 @router.post("/chat", response_model=ChatResponse)
 async def chat_with_data(request: ChatRequest):
     """
-    Chat with data using GPT (Phase 2 feature)
+    Chat with data using GPT with dataset-specific answers
     
     Args:
         request: ChatRequest containing file_id and question
@@ -106,8 +106,8 @@ Sample Data:
 {sample_data}
         """
         
-        # Get answer from GPT
-        chat_result = await openai_mcp.chat_with_data(request.question, data_context)
+        # Get answer from GPT with actual file path
+        chat_result = await openai_mcp.chat_with_data(request.question, data_context, file_path)
         
         return ChatResponse(
             success=True,
@@ -156,8 +156,8 @@ async def get_insights(file_id: str):
         data_summary = parse_result["data_summary"]
         sample_data = parse_result["sample_data"]
         
-        # Generate insights
-        insights_result = await openai_mcp.generate_insights(data_summary, sample_data)
+        # Generate insights with actual file path
+        insights_result = await openai_mcp.generate_insights(data_summary, sample_data, file_path)
         
         return {
             "success": True,

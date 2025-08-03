@@ -40,8 +40,8 @@ async def analyze_data(request: AnalysisRequest):
         data_summary = parse_result["data_summary"]
         sample_data = parse_result["sample_data"]
         
-        # Generate insights using OpenAI
-        insights_result = await openai_mcp.generate_insights(data_summary, sample_data)
+        # Generate insights using OpenAI with actual file path
+        insights_result = await openai_mcp.generate_insights(data_summary, sample_data, file_path)
         
         # Generate analysis ID
         analysis_id = str(uuid.uuid4())

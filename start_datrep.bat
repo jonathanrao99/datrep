@@ -1,27 +1,35 @@
 @echo off
-echo ==================================================
 echo 🚀 DatRep Startup Script
 echo ==================================================
+
+REM Check if we're in the right directory
+if not exist "package.json" (
+    echo ❌ Error: package.json not found. Please run this script from the DatRep root directory.
+    pause
+    exit /b 1
+)
+
+echo ✅ Starting DatRep servers...
 echo.
 
-echo Starting Backend...
+REM Start backend in a new window
+echo 🐍 Starting backend server...
 start "DatRep Backend" cmd /k "cd backend && python simple_server.py"
 
-echo Waiting for backend to start...
-timeout /t 5 /nobreak >nul
+REM Wait a moment for backend to start
+timeout /t 3 /nobreak > nul
 
-echo Starting Frontend...
+REM Start frontend in a new window
+echo ⚛️  Starting frontend server...
 start "DatRep Frontend" cmd /k "npm run dev"
 
 echo.
-echo ==================================================
-echo 🎉 DatRep is starting!
-echo ==================================================
-echo 📊 Frontend: http://localhost:3000
-echo 🔧 Backend:  http://localhost:8000
-echo 📖 API Docs: http://localhost:8000/docs
+echo 🎉 DatRep servers are starting!
 echo.
-echo Close the command windows to stop the services
-echo ==================================================
-
+echo 📊 Backend: http://localhost:8000
+echo 🌐 Frontend: http://localhost:3000 (or 3001)
+echo 📚 API Docs: http://localhost:8000/docs
+echo.
+echo 💡 Close the command windows to stop the servers
+echo.
 pause 

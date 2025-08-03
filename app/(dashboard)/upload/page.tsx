@@ -7,11 +7,11 @@ import { Badge } from '@/components/ui/badge'
 import { FileUploader } from '@/components/custom/file-uploader'
 import { DataTable } from '@/components/custom/data-table'
 import { LoadingSpinner } from '@/components/custom/loading-spinner'
-import { Upload, FileText, BarChart3, Brain, Download, Database, Target, Zap, Users, DollarSign, Wifi, GraduationCap, Lightbulb, Activity, Shield, Clock, Rocket, Eye, TrendingUp, CheckCircle, AlertCircle } from 'lucide-react'
+import { Upload, FileText, Brain, Database, Clock, AlertCircle, BarChart3, Eye } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
 interface UploadResponse {
-  id: string
+  file_id: string
   filename: string
   size: number
   columns: string[]
@@ -31,7 +31,6 @@ interface AnalysisResponse {
 export default function UploadPage() {
   const [file, setFile] = useState<File | null>(null)
   const [uploadResponse, setUploadResponse] = useState<UploadResponse | null>(null)
-  const [analysisResponse, setAnalysisResponse] = useState<AnalysisResponse | null>(null)
   const [isUploading, setIsUploading] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -41,7 +40,6 @@ export default function UploadPage() {
     setFile(file)
     setError(null)
     setUploadResponse(null)
-    setAnalysisResponse(null)
   }
 
   const handleUpload = async () => {
@@ -75,41 +73,46 @@ export default function UploadPage() {
   }
 
   const handleAnalyze = async () => {
-    if (!uploadResponse?.id) {
+    if (!uploadResponse?.file_id) {
       setError('Please upload a file first')
       return
     }
     setIsAnalyzing(true)
     setError(null)
     try {
-      // For now, we'll use the same file that was uploaded
-      if (!file) {
-        throw new Error('No file available for analysis')
-      }
-      const formData = new FormData()
-      formData.append('file', file)
+      // Use the file_id from the upload response
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/analyze`, {
         method: 'POST',
-        body: formData, // Changed to send FormData directly
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          file_id: uploadResponse.file_id
+        }),
       })
-      const data: AnalysisResponse = await response.json()
+      
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
         throw new Error(errorData.detail || 'Analysis failed')
       }
-      setAnalysisResponse(data)
+      
+      const data: AnalysisResponse = await response.json()
       console.log('Analysis completed successfully:', data)
+      
+      // Redirect to insights page
+      console.log('Redirecting to insights page:', `/insights/${uploadResponse.file_id}`)
+      
+      // Try multiple redirect methods
+      try {
+        router.push(`/insights/${uploadResponse.file_id}`)
+      } catch (redirectError) {
+        console.error('Router push failed, trying window.location:', redirectError)
+        window.location.href = `/insights/${uploadResponse.file_id}`
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Analysis failed')
     } finally {
       setIsAnalyzing(false)
-    }
-  }
-
-  const handleViewResults = () => {
-    const fileId = analysisResponse?.file_id || uploadResponse?.id
-    if (fileId) {
-              router.push(`/view/${fileId}`)
     }
   }
 
@@ -119,56 +122,6 @@ export default function UploadPage() {
     const sizes = ['Bytes', 'KB', 'MB', 'GB']
     const i = Math.floor(Math.log(bytes) / Math.log(k))
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-  }
-
-  const getInsightIcon = (title: string) => {
-    const lowerTitle = title.toLowerCase()
-    if (lowerTitle.includes('funding') || lowerTitle.includes('money') || lowerTitle.includes('cost')) {
-      return <DollarSign className="h-4 w-4 text-emerald-600" />
-    }
-    if (lowerTitle.includes('teacher') || lowerTitle.includes('class') || lowerTitle.includes('ratio')) {
-      return <Users className="h-4 w-4 text-blue-600" />
-    }
-    if (lowerTitle.includes('internet') || lowerTitle.includes('digital') || lowerTitle.includes('access')) {
-      return <Wifi className="h-4 w-4 text-purple-600" />
-    }
-    if (lowerTitle.includes('socioeconomic') || lowerTitle.includes('income') || lowerTitle.includes('economic')) {
-      return <GraduationCap className="h-4 w-4 text-orange-600" />
-    }
-    if (lowerTitle.includes('data') || lowerTitle.includes('dataset') || lowerTitle.includes('quality')) {
-      return <Database className="h-4 w-4 text-slate-600" />
-    }
-    if (lowerTitle.includes('variable') || lowerTitle.includes('metric') || lowerTitle.includes('analysis')) {
-      return <Target className="h-4 w-4 text-indigo-600" />
-    }
-    if (lowerTitle.includes('size') || lowerTitle.includes('volume') || lowerTitle.includes('records')) {
-      return <BarChart3 className="h-4 w-4 text-cyan-600" />
-    }
-    return <Lightbulb className="h-4 w-4 text-amber-600" />
-  }
-
-  const getConfidenceBadge = (confidence: string) => {
-    switch (confidence) {
-      case 'high':
-        return <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200">
-          High Confidence
-        </Badge>
-      case 'medium':
-        return <Badge className="bg-amber-50 text-amber-700 border-amber-200">
-          Medium Confidence
-        </Badge>
-      case 'low':
-        return <Badge className="bg-red-50 text-red-700 border-red-200">
-          Low Confidence
-        </Badge>
-      default:
-        return <Badge variant="secondary">Unknown</Badge>
-    }
-  }
-
-  const extractQuantities = (description: string) => {
-    const numbers = description.match(/\d+(?:\.\d+)?%?/g) || []
-    return numbers.slice(0, 3) // Return first 3 numbers found
   }
 
   return (
@@ -306,100 +259,7 @@ export default function UploadPage() {
         </Card>
       )}
 
-      {/* Analysis Response */}
-      {analysisResponse && (
-        <Card className="border-0 shadow-sm">
-          <CardHeader className="pb-4">
-            <CardTitle className="text-lg font-semibold text-slate-900">Analysis Complete</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
-                <div className="flex items-center gap-2 mb-2">
-                  <Database className="h-4 w-4 text-slate-600" />
-                  <p className="text-sm font-medium text-slate-700">File ID</p>
-                </div>
-                <p className="font-medium text-sm text-slate-900">{analysisResponse.file_id}</p>
-              </div>
-              <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
-                <div className="flex items-center gap-2 mb-2">
-                  <Brain className="h-4 w-4 text-slate-600" />
-                  <p className="text-sm font-medium text-slate-700">Insights</p>
-                </div>
-                <p className="text-2xl font-semibold text-slate-900">{analysisResponse.insights.length}</p>
-              </div>
-              <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
-                <div className="flex items-center gap-2 mb-2">
-                  <Clock className="h-4 w-4 text-slate-600" />
-                  <p className="text-sm font-medium text-slate-700">Analyzed At</p>
-                </div>
-                <p className="font-medium text-sm text-slate-900">{new Date(analysisResponse.analyzed_at).toLocaleDateString()}</p>
-              </div>
-            </div>
 
-            {/* AI Insights */}
-            {analysisResponse.insights && analysisResponse.insights.length > 0 && (
-              <div className="space-y-4">
-                <div className="flex items-center gap-2">
-                  <Brain className="h-5 w-5 text-slate-600" />
-                  <h4 className="text-lg font-semibold text-slate-900">AI Insights</h4>
-                  <Badge variant="outline" className="bg-slate-50 text-slate-700">
-                    {analysisResponse.insights.length} Discovered
-                  </Badge>
-                </div>
-                <div className="grid gap-4">
-                  {analysisResponse.insights.map((insight, index) => {
-                    const quantities = extractQuantities(insight.description)
-                    return (
-                      <div key={index} className="p-4 border border-slate-200 rounded-lg hover:shadow-md transition-shadow">
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="flex items-center gap-3">
-                            <div className="p-2 bg-slate-100 rounded-lg">
-                              {getInsightIcon(insight.title)}
-                            </div>
-                            <h5 className="font-medium text-slate-900">{insight.title}</h5>
-                          </div>
-                          {getConfidenceBadge(insight.confidence)}
-                        </div>
-                        
-                        {quantities.length > 0 && (
-                          <div className="flex gap-2 mb-3">
-                            {quantities.map((qty, qtyIndex) => (
-                              <Badge key={qtyIndex} variant="outline" className="bg-slate-50 text-slate-700">
-                                {qty}
-                              </Badge>
-                            ))}
-                          </div>
-                        )}
-                        
-                        <p className="text-sm text-slate-600 mb-3 leading-relaxed">{insight.description}</p>
-                        <div className="p-3 bg-slate-50 rounded-lg">
-                          <p className="text-sm font-medium text-slate-900 mb-1">Business Impact</p>
-                          <p className="text-sm text-slate-600">{insight.business_impact}</p>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
-
-            <div className="flex space-x-3">
-              <Button 
-                onClick={handleViewResults}
-                className="flex-1"
-              >
-                <BarChart3 className="h-4 w-4 mr-2" />
-                View Full Analysis
-              </Button>
-              <Button variant="outline">
-                <Download className="h-4 w-4 mr-2" />
-                Export Report
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
     </div>
   )
 } 

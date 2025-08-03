@@ -51,36 +51,17 @@ import {
 } from 'lucide-react'
 
 interface AnalysisData {
-  file_info: {
-    original_filename: string
-    file_size: number
-    uploaded_at: string
-  }
-  data_summary: {
-    rows: number
-    columns: number
-    column_names: string[]
-    statistics: any
-  }
-  insights: {
-    insights: Array<{
-      title: string
-      description: string
-      business_impact: string
-      confidence: string
-    }>
-    patterns: string[]
-    data_quality: {
-      issues: string[]
-      recommendations: string[]
-    }
-  }
-  charts: Array<{
-    id: string
-    type: string
+  file_id: string
+  statistics: any
+  missing_values: any
+  data_types: any
+  insights: Array<{
     title: string
-    config: any
+    description: string
+    business_impact: string
+    confidence: string
   }>
+  analyzed_at: string
 }
 
 export default function ViewPage() {
@@ -108,28 +89,8 @@ export default function ViewPage() {
         
         const analysisData = await response.json()
         
-        // Transform the API response to match our interface
-        const transformedData: AnalysisData = {
-          file_info: {
-            original_filename: analysisData.file_info.original_filename,
-            file_size: analysisData.file_info.file_size,
-            uploaded_at: analysisData.file_info.uploaded_at
-          },
-          data_summary: {
-            rows: analysisData.data_summary.rows,
-            columns: analysisData.data_summary.columns,
-            column_names: analysisData.data_summary.column_names,
-            statistics: analysisData.data_summary.statistics
-          },
-          insights: {
-            insights: analysisData.insights.insights,
-            patterns: analysisData.insights.patterns,
-            data_quality: analysisData.insights.data_quality
-          },
-          charts: analysisData.charts
-        }
-        
-        setData(transformedData)
+        // Use the API response directly since it matches our interface
+        setData(analysisData)
         setLoading(false)
       } catch (err) {
         console.error('Error fetching analysis data:', err)
@@ -336,16 +297,16 @@ export default function ViewPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="space-y-2">
-          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">{data.file_info.original_filename}</h1>
+          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Analysis Report</h1>
           <p className="text-sm text-slate-600 flex items-center gap-3 font-medium">
             <span className="flex items-center gap-1">
               <Clock className="h-4 w-4 text-slate-500" />
-              Analysis completed {formatDate(data.file_info.uploaded_at)}
+              Analysis completed {formatDate(data.analyzed_at)}
             </span>
             <span className="w-1 h-1 bg-slate-400 rounded-full"></span>
             <span className="flex items-center gap-1">
               <Database className="h-4 w-4 text-slate-500" />
-              {formatFileSize(data.file_info.file_size)}
+              File ID: {data.file_id}
             </span>
           </p>
         </div>
@@ -382,8 +343,8 @@ export default function ViewPage() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-semibold text-blue-700 uppercase tracking-wide">Total Records</p>
-                <p className="text-3xl font-bold text-blue-900">{data.data_summary.rows.toLocaleString()}</p>
+                <p className="text-sm font-semibold text-blue-700 uppercase tracking-wide">File ID</p>
+                <p className="text-3xl font-bold text-blue-900">{data.file_id}</p>
               </div>
               <div className="p-3 bg-blue-100 rounded-xl">
                 <Database className="h-8 w-8 text-blue-600" />
@@ -396,8 +357,8 @@ export default function ViewPage() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-semibold text-emerald-700 uppercase tracking-wide">Variables</p>
-                <p className="text-3xl font-bold text-emerald-900">{data.data_summary.columns}</p>
+                <p className="text-sm font-semibold text-emerald-700 uppercase tracking-wide">Insights</p>
+                <p className="text-3xl font-bold text-emerald-900">{data.insights.length}</p>
               </div>
               <div className="p-3 bg-emerald-100 rounded-xl">
                 <BarChart3 className="h-8 w-8 text-emerald-600" />
@@ -410,8 +371,8 @@ export default function ViewPage() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-semibold text-purple-700 uppercase tracking-wide">Key Insights</p>
-                <p className="text-3xl font-bold text-purple-900">{data.insights.insights.length}</p>
+                <p className="text-sm font-semibold text-purple-700 uppercase tracking-wide">Data Types</p>
+                <p className="text-3xl font-bold text-purple-900">{Object.keys(data.data_types).length}</p>
               </div>
               <div className="p-3 bg-purple-100 rounded-xl">
                 <Brain className="h-8 w-8 text-purple-600" />
@@ -424,8 +385,8 @@ export default function ViewPage() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-semibold text-orange-700 uppercase tracking-wide">Visualizations</p>
-                <p className="text-3xl font-bold text-orange-900">{data.charts.length}</p>
+                <p className="text-sm font-semibold text-orange-700 uppercase tracking-wide">Missing Values</p>
+                <p className="text-3xl font-bold text-orange-900">{Object.keys(data.missing_values).length}</p>
               </div>
               <div className="p-3 bg-orange-100 rounded-xl">
                 <BarChart className="h-8 w-8 text-orange-600" />
@@ -461,7 +422,7 @@ export default function ViewPage() {
               <p className="text-sm text-slate-600">The most important discoveries from your data analysis</p>
             </CardHeader>
             <CardContent className="space-y-6">
-              {data.insights.insights.slice(0, 3).map((insight, index) => {
+              {data.insights && data.insights.length > 0 ? data.insights.slice(0, 3).map((insight, index) => {
                 const quantities = extractQuantities(insight.description)
                 return (
                   <div key={index} className="flex items-start gap-6 p-6 bg-gradient-to-r from-slate-50 to-slate-100 rounded-xl border border-slate-200 hover:shadow-md transition-all duration-300">
@@ -490,7 +451,11 @@ export default function ViewPage() {
                     </div>
                   </div>
                 )
-              })}
+              }) : (
+                <div className="text-center py-8">
+                  <p className="text-slate-600">No insights available</p>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -501,12 +466,16 @@ export default function ViewPage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {data.insights.patterns.slice(0, 4).map((pattern, index) => (
+                {data.insights && data.insights.length > 0 ? data.insights.slice(0, 4).map((insight, index) => (
                   <div key={index} className="flex items-start gap-3 p-3 bg-slate-50 rounded-lg">
                     <TrendingUp className="h-5 w-5 text-blue-600 mt-0.5" />
-                    <p className="text-slate-700 text-sm">{pattern}</p>
+                    <p className="text-slate-700 text-sm">{insight.title}</p>
                   </div>
-                ))}
+                )) : (
+                  <div className="text-center py-4">
+                    <p className="text-slate-600">No patterns available</p>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -519,24 +488,26 @@ export default function ViewPage() {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                {data.charts.slice(0, 2).map((chart) => (
-                  <div key={chart.id} className="space-y-4">
+                {data.insights && data.insights.length > 0 ? data.insights.slice(0, 2).map((insight, index) => (
+                  <div key={index} className="space-y-4">
                     <div className="space-y-2">
-                      <h4 className="text-lg font-semibold text-slate-900">{chart.title}</h4>
+                      <h4 className="text-lg font-semibold text-slate-900">{insight.title}</h4>
                       <p className="text-sm text-slate-600 leading-relaxed">
-                        {getChartDescription(chart.type, chart.config)}
+                        {insight.description}
                       </p>
                     </div>
-                    <div className="h-80 bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                      <ChartRenderer
-                        type={chart.type}
-                        title={chart.title}
-                        config={chart.config}
-                        data={[]}
-                      />
+                    <div className="h-80 bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl border border-slate-200 shadow-sm overflow-hidden flex items-center justify-center">
+                      <div className="text-center text-slate-500">
+                        <BarChart3 className="h-12 w-12 mx-auto mb-2" />
+                        <p>Chart visualization coming soon</p>
+                      </div>
                     </div>
                   </div>
-                ))}
+                )) : (
+                  <div className="text-center py-8">
+                    <p className="text-slate-600">No visualizations available</p>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -545,7 +516,7 @@ export default function ViewPage() {
         {/* All Insights Tab */}
         <TabsContent value="insights" className="space-y-6">
           <div className="space-y-6">
-            {data.insights.insights.map((insight, index) => {
+            {data.insights && data.insights.length > 0 ? data.insights.map((insight, index) => {
               const quantities = extractQuantities(insight.description)
               return (
                 <Card key={index} className="border-0 shadow-sm">
@@ -580,7 +551,11 @@ export default function ViewPage() {
                   </CardContent>
                 </Card>
               )
-            })}
+            }) : (
+              <div className="text-center py-8">
+                <p className="text-slate-600">No insights available</p>
+              </div>
+            )}
           </div>
         </TabsContent>
 

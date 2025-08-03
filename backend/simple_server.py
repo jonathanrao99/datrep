@@ -1,15 +1,18 @@
 import os
 import uuid
 import json
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
-import openai
+from openai import OpenAI
 
 # Load environment variables
 load_dotenv()
+
+# Initialize OpenAI client
+openai_client = OpenAI()
 
 # Create FastAPI app
 app = FastAPI(
@@ -27,6 +30,82 @@ analysis_storage = {}
 # Simple in-memory storage for analysis results (in production, use a database)
 analysis_storage = {}
 file_storage = {}  # Store actual file data and metadata
+
+def _parse_ai_response_to_insights(ai_response: str) -> list:
+    """Parse AI response into structured insights"""
+    import re
+    
+    # Split response into sections
+    sections = ai_response.split('\n\n')
+    insights = []
+    
+    # Skip intro and conclusion sections
+    for section in sections:
+        section_lower = section.lower()
+        
+        # Skip intro/conclusion sections
+        if any(keyword in section_lower for keyword in ['introduction', 'conclusion', 'summary', 'overview', 'thrilling insights derived']):
+            continue
+            
+        # Look for insights with emoji titles
+        title_match = re.search(r'[🎯📊💡🎉📈🎓💰⚡🔍🎵🔥💔][^:]+:', section)
+        if title_match:
+            title = title_match.group(0).strip()
+            
+            # Extract description (everything after title until next section)
+            description = section.replace(title_match.group(0), '').strip()
+            
+            # Extract business impact if present
+            business_impact_match = re.search(r'Business Impact:\s*(.*?)(?=\n\n|\n[A-Z]|$)', description, re.DOTALL | re.IGNORECASE)
+            if business_impact_match:
+                business_impact = business_impact_match.group(1).strip()
+                # Remove the business impact part from description
+                description = re.sub(r'Business Impact:.*?(?=\n\n|\n[A-Z]|$)', '', description, flags=re.DOTALL | re.IGNORECASE).strip()
+            else:
+                # Try alternative patterns for business impact
+                alt_patterns = [
+                    r'Business Impact:\s*(.*?)(?=\n|$)',
+                    r'Impact:\s*(.*?)(?=\n|$)',
+                    r'Implications:\s*(.*?)(?=\n|$)'
+                ]
+                business_impact = "This insight provides valuable information for decision-making."
+                for pattern in alt_patterns:
+                    match = re.search(pattern, description, re.IGNORECASE)
+                    if match:
+                        business_impact = match.group(1).strip()
+                        description = re.sub(pattern, '', description, flags=re.IGNORECASE).strip()
+                        break
+                
+                # If still not found, try to extract from the end of the section
+                if business_impact == "This insight provides valuable information for decision-making.":
+                    # Look for the last Business Impact in the entire section
+                    section_business_impact = re.search(r'Business Impact:\s*(.*?)(?=\n\n|\n[A-Z]|$)', section, re.DOTALL | re.IGNORECASE)
+                    if section_business_impact:
+                        business_impact = section_business_impact.group(1).strip()
+            
+            if description:
+                # Convert markdown bold to HTML bold for title, description, and business impact
+                title = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', title)
+                description = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', description)
+                business_impact = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', business_impact)
+                
+                insights.append({
+                    "title": title,
+                    "description": description,
+                    "business_impact": business_impact,
+                    "confidence": "high"
+                })
+    
+    # If no insights found, create a basic one
+    if not insights:
+        insights = [{
+            "title": "AI Analysis Complete",
+            "description": "AI has analyzed your dataset and found interesting patterns.",
+            "business_impact": "These insights can guide your business decisions.",
+            "confidence": "high"
+        }]
+    
+    return insights
 
 # Configure CORS
 app.add_middleware(
@@ -63,8 +142,10 @@ async def upload_file(file: UploadFile = File(...)):
         if not file.filename.lower().endswith(('.csv', '.xlsx', '.xls')):
             raise HTTPException(status_code=400, detail="Only CSV and Excel files are supported")
         
-        # Generate file ID
-        file_id = str(uuid.uuid4())
+        # Generate shorter unique file ID (8 characters)
+        import secrets
+        import string
+        file_id = ''.join(secrets.choice(string.ascii_lowercase + string.digits) for _ in range(8))
         
         # Read file content
         content = await file.read()
@@ -75,6 +156,15 @@ async def upload_file(file: UploadFile = File(...)):
                 status_code=413, 
                 detail=f"File too large. Maximum size is {MAX_FILE_SIZE // (1024*1024)}MB"
             )
+        
+        # Create uploads directory if it doesn't exist
+        uploads_dir = "uploads"
+        os.makedirs(uploads_dir, exist_ok=True)
+        
+        # Save file to disk
+        file_path = os.path.join(uploads_dir, f"{file_id}_{file.filename}")
+        with open(file_path, "wb") as f:
+            f.write(content)
         
         # For CSV files, parse the content
         if file.filename.lower().endswith('.csv'):
@@ -95,10 +185,11 @@ async def upload_file(file: UploadFile = File(...)):
             # Get preview (first 5 rows)
             preview = rows[:5]
             
-                        # Store actual file data
+            # Store actual file data
             file_storage[file_id] = {
                 "filename": file.filename,
                 "size": len(content),
+                "file_path": file_path,  # Store the file path
                 "content": content,  # Store the raw content for analysis
                 "columns": columns,
                 "rows": rows,
@@ -108,7 +199,7 @@ async def upload_file(file: UploadFile = File(...)):
             
             # Basic file info
             file_info = {
-                "id": file_id,
+                "file_id": file_id,  # Make sure file_id is returned
                 "filename": file.filename,
                 "size": len(content),
                 "columns": columns,
@@ -121,6 +212,7 @@ async def upload_file(file: UploadFile = File(...)):
             file_storage[file_id] = {
                 "filename": file.filename,
                 "size": len(content),
+                "file_path": file_path,  # Store the file path
                 "columns": ["Column1", "Column2", "Column3"],  # Placeholder
                 "rows": [],
                 "preview": [
@@ -131,7 +223,7 @@ async def upload_file(file: UploadFile = File(...)):
             }
             
             file_info = {
-                "id": file_id,
+                "file_id": file_id,  # Make sure file_id is returned
                 "filename": file.filename,
                 "size": len(content),
                 "columns": ["Column1", "Column2", "Column3"],  # Placeholder
@@ -149,32 +241,28 @@ async def upload_file(file: UploadFile = File(...)):
 
 # Data analysis endpoint
 @app.post("/api/analyze")
-async def analyze_data(file: UploadFile = File(...)):
+async def analyze_data(request: dict = Body(...)):
     """Analyze uploaded data and return insights"""
     try:
-        # Validate file type
-        if not file.filename.lower().endswith(('.csv', '.xlsx', '.xls')):
-            raise HTTPException(status_code=400, detail="Only CSV and Excel files are supported")
-        
-        # Find the file in storage
-        file_id = None
-        print(f"Looking for file: {file.filename}")
-        print(f"Available files: {list(file_storage.keys())}")
-        for fid, file_data in file_storage.items():
-            print(f"Checking {fid}: {file_data['filename']}")
-            if file_data["filename"] == file.filename:
-                file_id = fid
-                print(f"Found file ID: {file_id}")
-                break
+        file_id = request.get("file_id", "")
         
         if not file_id:
+            raise HTTPException(status_code=400, detail="file_id is required")
+        
+        # Find the file in storage
+        if file_id not in file_storage:
             raise HTTPException(status_code=404, detail="File not found. Please upload the file first.")
         
         stored_file = file_storage[file_id]
         content = stored_file["content"]
+        filename = stored_file["filename"]
+        
+        # Validate file type
+        if not filename.lower().endswith(('.csv', '.xlsx', '.xls')):
+            raise HTTPException(status_code=400, detail="Only CSV and Excel files are supported")
         
         # For CSV files, parse the content
-        if file.filename.lower().endswith('.csv'):
+        if filename.lower().endswith('.csv'):
             import csv
             import io
             
@@ -217,190 +305,146 @@ async def analyze_data(file: UploadFile = File(...)):
                 except:
                     data_types[col] = "object"
             
-            # Generate randomized insights based on actual data
-            import random
-            
-            # Calculate missing data statistics
-            total_missing = sum(missing_values.values())
-            missing_percentage = (total_missing / (len(rows) * len(columns))) * 100 if total_missing > 0 else 0
-            
-            # Get data type information
-            numeric_cols = [col for col, dtype in data_types.items() if dtype == "float64"]
-            text_cols = [col for col, dtype in data_types.items() if dtype == "object"]
-            
-            # Create a pool of possible insights based on data characteristics
-            possible_insights = []
-            
-            # Data Overview Templates
-            overview_templates = [
-                {
-                    "title": "Dataset Structure Analysis",
-                    "description": f"Your dataset contains {len(rows)} records across {len(columns)} variables, providing a {random.choice(['solid', 'robust', 'comprehensive'])} foundation for analysis.",
-                    "business_impact": "This structure enables detailed pattern recognition and actionable insights for your business decisions.",
-                    "confidence": "high"
-                },
-                {
-                    "title": "Data Volume Assessment",
-                    "description": f"With {len(rows)} data points, you have a {random.choice(['substantial', 'significant', 'considerable'])} amount of information to work with.",
-                    "business_impact": "This volume allows for reliable statistical analysis and confident decision-making.",
-                    "confidence": "high"
-                },
-                {
-                    "title": "Variable Diversity",
-                    "description": f"Your {len(columns)} variables offer a {random.choice(['rich', 'diverse', 'comprehensive'])} perspective on your data landscape.",
-                    "business_impact": "This diversity enables multi-dimensional analysis and deeper insights.",
-                    "confidence": "high"
-                }
-            ]
-            possible_insights.extend(overview_templates)
-            
-            # Data Quality Templates
-            if total_missing > 0:
-                quality_templates = [
+            # Generate real AI insights using OpenAI
+            try:
+                import pandas as pd
+                
+                # Create DataFrame for analysis
+                df = pd.DataFrame(rows)
+                
+                # Create detailed data context for OpenAI
+                numeric_cols = df.select_dtypes(include=['number']).columns
+                categorical_cols = df.select_dtypes(include=['object', 'category']).columns
+                
+                context_parts = []
+                context_parts.append(f"Dataset: {len(df)} rows, {len(df.columns)} columns")
+                context_parts.append(f"Columns: {list(df.columns)}")
+                
+                if len(numeric_cols) > 0:
+                    context_parts.append("Numeric columns:")
+                    for col in numeric_cols[:5]:  # Show first 5 numeric columns
+                        stats = df[col].describe()
+                        context_parts.append(f"- {col}: mean={stats['mean']:.2f}, std={stats['std']:.2f}, min={stats['min']:.2f}, max={stats['max']:.2f}")
+                
+                if len(categorical_cols) > 0:
+                    context_parts.append("Categorical columns:")
+                    for col in categorical_cols[:5]:  # Show first 5 categorical columns
+                        value_counts = df[col].value_counts()
+                        context_parts.append(f"- {col}: top value = {value_counts.index[0]} ({value_counts.iloc[0]} times)")
+                
+                # Add correlation analysis if multiple numeric columns
+                if len(numeric_cols) >= 2:
+                    corr_matrix = df[numeric_cols].corr()
+                    high_corr = []
+                    for i in range(len(corr_matrix.columns)):
+                        for j in range(i+1, len(corr_matrix.columns)):
+                            corr_val = corr_matrix.iloc[i, j]
+                            if abs(corr_val) > 0.3:
+                                high_corr.append(f"{corr_matrix.columns[i]} & {corr_matrix.columns[j]}: {corr_val:.2f}")
+                    
+                    if high_corr:
+                        context_parts.append("Strong correlations:")
+                        context_parts.extend(high_corr[:3])
+                
+                # Add sample data
+                context_parts.append("Sample data (first 5 rows):")
+                context_parts.append(df.head(5).to_string())
+                
+                dataset_context = "\n".join(context_parts)
+                
+                # Create prompt for AI insights
+                prompt = f"""
+You are a brilliant, enthusiastic data analyst who loves helping people understand their data! 🚀
+
+Your mission: Generate EXCITING, SPECIFIC insights from this dataset that are fun and professional.
+
+Dataset Context:
+{dataset_context}
+
+Your task: Generate EXACTLY 5-10 specific insights that:
+🎯 SPECIFIC - Use actual numbers, names, and exact values from the data
+🎉 EXCITING - Make it fun and engaging with emojis and personality  
+📊 DETAILED - Show the exact patterns you found
+💡 ANALYTICAL - Explain what the numbers mean
+
+Focus on:
+- Highest/lowest values with specific numbers
+- Strongest correlations with exact correlation values
+- Interesting patterns/outliers with specific examples
+- Business implications with actionable insights
+- Fun facts with specific data points
+
+CRITICAL FORMATTING REQUIREMENTS:
+1. Each insight must be separated by double newlines
+2. Each insight must follow this EXACT format:
+   [EMOJI] **Title:**
+   **Full description with ALL important numbers, column names, and values in bold**
+   
+   Business Impact: **column_name=value, another_column=value, specific business implication**
+
+3. Use **bold** for ALL important numbers, column names, and key phrases
+4. Make the ENTIRE title bold (no ** symbols visible)
+5. Each Business Impact must be COMPLETELY DIFFERENT and include specific column=value pairs
+6. Generate EXACTLY 5-10 insights minimum
+
+Example format:
+🎵 **Top Track Alert: El Ultimo Adiós Dominates!**
+**The track 'El Ultimo Adiós - Varios Artistas Version' stands out as the most frequently appearing track in the dataset with track_count=15 occurrences, making it the clear leader in track popularity.**
+
+Business Impact: **track_count=15, popularity_rank=1, suggests focusing marketing efforts on similar tracks or artists for maximum engagement.**
+
+📊 **Correlation Discovery: Energy vs Danceability**
+**There is a strong positive correlation of 0.85 between energy_level and danceability_score, indicating that high-energy tracks are also highly danceable.**
+
+Business Impact: **energy_level=0.85, danceability_score=0.85, suggests targeting workout and party playlists with high-energy, danceable tracks for maximum engagement.**
+
+IMPORTANT: 
+- Bold ALL column names, numbers, and important terms
+- Business Impact must include specific column=value pairs
+- Never show ** symbols in the final output
+- Each Business Impact must be completely unique
+
+Be specific to THIS dataset - use actual column names, real numbers, and exact values you find in the data!
+"""
+                
+                # Call OpenAI API
+                response = openai_client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {"role": "system", "content": "You are an expert data analyst who provides specific, engaging insights. You MUST generate EXACTLY 5-10 insights minimum. Each insight must have a COMPLETELY DIFFERENT business impact with specific column=value pairs. NEVER repeat the same business impact. Each Business Impact must include actual column names and values from the dataset. Make ALL important terms, numbers, and column names bold."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    max_tokens=5000,
+                    temperature=0.3,
+                    top_p=0.9
+                )
+                
+                # Parse the response
+                ai_response = response.choices[0].message.content
+                print(f"AI Response: {ai_response}")
+                
+                # Parse the natural language response
+                insights = _parse_ai_response_to_insights(ai_response)
+                print(f"Parsed Insights: {insights}")
+                
+            except Exception as e:
+                print(f"OpenAI API error: {e}")
+                # Fallback to basic insights
+                insights = [
                     {
-                        "title": "Data Completeness Check",
-                        "description": f"Found {total_missing} missing values ({missing_percentage:.1f}% of total data) - {random.choice(['manageable for analysis', 'within acceptable limits', 'suitable for processing'])}.",
-                        "business_impact": "Consider data cleaning to improve analysis accuracy and reliability.",
-                        "confidence": "medium"
-                    },
-                    {
-                        "title": "Data Quality Assessment",
-                        "description": f"Data integrity analysis shows {missing_percentage:.1f}% missing values, which is {random.choice(['acceptable', 'manageable', 'workable'])} for analysis.",
-                        "business_impact": "Addressing missing data can improve the quality and reliability of your insights.",
-                        "confidence": "medium"
-                    }
-                ]
-            else:
-                quality_templates = [
-                    {
-                        "title": "Excellent Data Quality",
-                        "description": f"Perfect! Your dataset has {random.choice(['complete', 'full', 'comprehensive'])} data with no missing values.",
-                        "business_impact": "High data quality ensures reliable insights and confident business decisions.",
-                        "confidence": "high"
-                    },
-                    {
-                        "title": "Data Integrity Verified",
-                        "description": f"Your dataset shows {random.choice(['excellent', 'outstanding', 'perfect'])} data integrity with 100% completeness.",
-                        "business_impact": "Complete data enables the most accurate analysis and trustworthy insights.",
-                        "confidence": "high"
-                    }
-                ]
-            possible_insights.extend(quality_templates)
-            
-            # Statistical Analysis Templates
-            if numeric_cols:
-                statistical_templates = [
-                    {
-                        "title": "Numerical Analysis Ready",
-                        "description": f"Your {len(numeric_cols)} numerical variables enable {random.choice(['comprehensive', 'detailed', 'thorough'])} statistical analysis.",
-                        "business_impact": "Numerical data allows for correlation analysis and trend identification.",
-                        "confidence": "high"
-                    },
-                    {
-                        "title": "Statistical Power",
-                        "description": f"With {len(numeric_cols)} quantitative variables, you have {random.choice(['strong', 'robust', 'powerful'])} analytical capabilities.",
-                        "business_impact": "This enables advanced statistical modeling and predictive insights.",
-                        "confidence": "high"
-                    }
-                ]
-                possible_insights.extend(statistical_templates)
-            
-            if text_cols:
-                categorical_templates = [
-                    {
-                        "title": "Categorical Analysis",
-                        "description": f"Your {len(text_cols)} categorical variables enable {random.choice(['segmented', 'grouped', 'targeted'])} analysis approaches.",
-                        "business_impact": "Categorical data allows for comparison across different groups and segments.",
-                        "confidence": "high"
-                    },
-                    {
-                        "title": "Grouping Capabilities",
-                        "description": f"The {len(text_cols)} categorical variables provide {random.choice(['excellent', 'strong', 'robust'])} grouping and segmentation options.",
-                        "business_impact": "This enables targeted analysis and group-specific insights.",
-                        "confidence": "high"
-                    }
-                ]
-                possible_insights.extend(categorical_templates)
-            
-            # Data Size Templates
-            if len(rows) > 1000:
-                size_templates = [
-                    {
-                        "title": "Large-Scale Dataset",
-                        "description": f"Your {len(rows)} records represent a {random.choice(['substantial', 'significant', 'large-scale'])} dataset suitable for advanced analytics.",
-                        "business_impact": "Large datasets enable machine learning and predictive modeling capabilities.",
-                        "confidence": "high"
-                    }
-                ]
-            elif len(rows) > 100:
-                size_templates = [
-                    {
-                        "title": "Robust Dataset",
-                        "description": f"With {len(rows)} records, you have a {random.choice(['robust', 'solid', 'reliable'])} foundation for statistical analysis.",
-                        "business_impact": "This size provides confidence in pattern recognition and trend analysis.",
-                        "confidence": "high"
-                    }
-                ]
-            elif len(rows) > 10:
-                size_templates = [
-                    {
-                        "title": "Moderate Dataset",
-                        "description": f"Your {len(rows)} records provide a {random.choice(['good', 'adequate', 'suitable'])} basis for initial analysis.",
-                        "business_impact": "While limited, this data can still reveal important patterns and insights.",
-                        "confidence": "medium"
-                    }
-                ]
-            else:
-                size_templates = [
-                    {
-                        "title": "Limited Dataset",
-                        "description": f"Your {len(rows)} records provide a {random.choice(['basic', 'initial', 'preliminary'])} foundation for analysis.",
-                        "business_impact": "Consider collecting more data for more robust and reliable insights.",
-                        "confidence": "low"
-                    }
-                ]
-            possible_insights.extend(size_templates)
-            
-            # Variable Count Templates
-            if len(columns) > 15:
-                variable_templates = [
-                    {
-                        "title": "High-Dimensional Data",
-                        "description": f"Your {len(columns)} variables create a {random.choice(['complex', 'multi-dimensional', 'rich'])} analytical landscape.",
-                        "business_impact": "High-dimensional data enables sophisticated correlation and factor analysis.",
+                        "title": "Data Analysis Ready",
+                        "description": f"Your dataset contains {len(rows)} records with {len(columns)} variables ready for analysis.",
+                        "business_impact": "This provides a solid foundation for data-driven insights.",
                         "confidence": "high"
                     }
                 ]
-            elif len(columns) > 8:
-                variable_templates = [
-                    {
-                        "title": "Well-Structured Data",
-                        "description": f"With {len(columns)} variables, your data has a {random.choice(['balanced', 'well-structured', 'comprehensive'])} analytical framework.",
-                        "business_impact": "This structure enables meaningful pattern recognition and relationship analysis.",
-                        "confidence": "high"
-                    }
-                ]
-            else:
-                variable_templates = [
-                    {
-                        "title": "Focused Dataset",
-                        "description": f"Your {len(columns)} variables provide a {random.choice(['focused', 'targeted', 'streamlined'])} analytical approach.",
-                        "business_impact": "Fewer variables can lead to more focused and actionable insights.",
-                        "confidence": "high"
-                    }
-                ]
-            possible_insights.extend(variable_templates)
-            
-            # Randomly select 5-10 insights
-            num_insights = random.randint(5, min(10, len(possible_insights)))
-            insights = random.sample(possible_insights, num_insights)
             
         else:
             # For Excel files, return basic info (would need pandas for full parsing)
             insights = [
                 {
                     "title": "Excel File Detected",
-                    "description": f"Excel file '{file.filename}' uploaded successfully",
+                    "description": f"Excel file '{filename}' uploaded successfully",
                     "business_impact": "File ready for analysis",
                     "confidence": "high"
                 }
@@ -411,17 +455,21 @@ async def analyze_data(file: UploadFile = File(...)):
         
 
         
+        from datetime import datetime, timezone
+        
         analysis_result = {
             "file_id": file_id,  # Use the same file ID from storage
             "statistics": stats,
             "missing_values": missing_values,
             "data_types": data_types,
             "insights": insights,
-            "analyzed_at": "2024-01-01T00:00:00Z"
+            "analyzed_at": datetime.now(timezone.utc).isoformat()
         }
         
         # Store the analysis result
         analysis_storage[file_id] = analysis_result
+        print(f"Stored analysis for file_id: {file_id}")
+        print(f"Analysis result: {analysis_result}")
         
         return analysis_result
         
@@ -440,66 +488,139 @@ async def chat_with_data(request: dict):
             raise HTTPException(status_code=400, detail="Question is required")
         
         # Initialize OpenAI client
-        openai.api_key = os.getenv("OPENAI_API_KEY")
-        if not openai.api_key:
-            raise HTTPException(status_code=500, detail="OpenAI API key not configured")
+        openai_client = OpenAI()
         
-        # Create a context about the dataset
-        # In a real implementation, you would load the actual dataset based on file_id
-        dataset_context = f"""
-        You are an AI data analyst helping a user understand their dataset. 
-        The user has uploaded a dataset with file ID: {file_id}
+        # Load actual dataset
+        file_path = None
+        try:
+            # Try to find the file in uploads directory
+            uploads_dir = "uploads"
+            for filename in os.listdir(uploads_dir):
+                if file_id in filename:
+                    file_path = os.path.join(uploads_dir, filename)
+                    break
+        except Exception as e:
+            print(f"Warning: Could not find file: {e}")
         
-        Based on the dataset analysis, here are some key characteristics:
-        - The dataset contains various types of data (numerical and categorical)
-        - There are patterns and relationships between variables
-        - The data quality is generally good with some missing values
-        - There are interesting trends and correlations to explore
+        # Create dataset context based on actual data
+        dataset_context = ""
+        if file_path and os.path.exists(file_path):
+            try:
+                import pandas as pd
+                if file_path.endswith('.csv'):
+                    df = pd.read_csv(file_path)
+                else:
+                    df = pd.read_excel(file_path)
+                
+                # Create detailed context from actual data
+                numeric_cols = df.select_dtypes(include=['number']).columns
+                categorical_cols = df.select_dtypes(include=['object', 'category']).columns
+                
+                context_parts = []
+                context_parts.append(f"Dataset: {len(df)} rows, {len(df.columns)} columns")
+                context_parts.append(f"Columns: {list(df.columns)}")
+                
+                if len(numeric_cols) > 0:
+                    context_parts.append("Numeric columns:")
+                    for col in numeric_cols[:3]:
+                        stats = df[col].describe()
+                        context_parts.append(f"- {col}: mean={stats['mean']:.2f}, std={stats['std']:.2f}")
+                
+                if len(categorical_cols) > 0:
+                    context_parts.append("Categorical columns:")
+                    for col in categorical_cols[:3]:
+                        value_counts = df[col].value_counts()
+                        context_parts.append(f"- {col}: top value = {value_counts.index[0]} ({value_counts.iloc[0]} times)")
+                
+                # Add correlation analysis if multiple numeric columns
+                if len(numeric_cols) >= 2:
+                    corr_matrix = df[numeric_cols].corr()
+                    high_corr = []
+                    for i in range(len(corr_matrix.columns)):
+                        for j in range(i+1, len(corr_matrix.columns)):
+                            corr_val = corr_matrix.iloc[i, j]
+                            if abs(corr_val) > 0.5:
+                                high_corr.append(f"{corr_matrix.columns[i]} & {corr_matrix.columns[j]}: {corr_val:.2f}")
+                    
+                    if high_corr:
+                        context_parts.append("Strong correlations:")
+                        context_parts.extend(high_corr[:3])
+                
+                context_parts.append("Sample data (first 3 rows):")
+                context_parts.append(df.head(3).to_string())
+                
+                dataset_context = "\n".join(context_parts)
+                
+            except Exception as e:
+                print(f"Warning: Could not load actual data: {e}")
+                dataset_context = f"Dataset with file ID: {file_id} (data loading failed)"
+        else:
+            dataset_context = f"Dataset with file ID: {file_id} (file not found)"
         
-        The user is asking: {question}
-        
-        Please provide a helpful, analytical response that:
-        1. Addresses their specific question
-        2. Provides insights based on data analysis principles
-        3. Suggests follow-up questions they might find interesting
-        4. Uses a professional but conversational tone
-        5. Acknowledges the limitations of not having the actual dataset loaded
-        
-        Keep your response concise but informative (2-4 paragraphs maximum).
-        """
+        # Create the full context for the question
+        full_context = f"""
+You are a brilliant, enthusiastic data analyst who loves helping people understand their data! 🚀
+
+Your superpower: Making complex data insights fun and easy to understand!
+
+Dataset Context:
+{dataset_context}
+
+User Question: {question}
+
+Your mission: Provide a detailed, fun, and professional answer that:
+🎯 Directly addresses their question with SPECIFIC data insights
+📊 Uses ACTUAL numbers and patterns from their dataset
+💡 Provides actionable insights and recommendations
+🎉 Makes it engaging and exciting to read with emojis
+🔍 Shows your analytical expertise with specific examples
+
+Be specific to their actual data - mention real correlations, patterns, and insights you find. 
+Use exact numbers, column names, and specific data points from their dataset.
+
+Make it conversational but professional, detailed but not overwhelming.
+Include specific examples like: "The correlation between age and salary is 0.85, meaning older employees earn significantly more."
+
+Keep your response detailed and informative (3-4 paragraphs) to provide real value.
+"""
         
         try:
-            # Call OpenAI API
-            response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
+            # Call OpenAI API with optimized settings
+            response = openai_client.chat.completions.create(
+                model="gpt-4o-mini",  # Use more efficient model
                 messages=[
-                    {"role": "system", "content": "You are a helpful AI data analyst with expertise in statistical analysis, data visualization, and business intelligence. You help users understand their datasets and extract meaningful insights."},
-                    {"role": "user", "content": dataset_context}
+                    {"role": "system", "content": "You are a brilliant, enthusiastic data analyst who loves discovering hidden patterns in data! You make complex insights fun and easy to understand while maintaining professional expertise. Use emojis sparingly but effectively to make responses engaging."},
+                    {"role": "user", "content": full_context}
                 ],
-                max_tokens=500,
-                temperature=0.7
+                max_tokens=1200,  # Increased for more detailed responses
+                temperature=0.3,  # Slightly higher for more engaging responses
+                top_p=0.9
             )
             
             ai_response = response.choices[0].message.content.strip()
             
-            # Generate follow-up questions based on the user's question
+            # Generate follow-up questions based on the actual data
             follow_up_prompt = f"""
-            Based on the user's question: "{question}"
-            And your response: "{ai_response}"
+Based on the dataset context:
+{dataset_context}
+
+And the user's question: "{question}"
+And your response: "{ai_response}"
+
+Generate 3-4 relevant follow-up questions that would help the user explore their specific data further.
+Make them specific to the actual data patterns and insights.
+Return only the questions, one per line, without numbering.
+"""
             
-            Generate 3-4 relevant follow-up questions that would help the user explore their data further.
-            Make them specific and actionable.
-            Return only the questions, one per line, without numbering.
-            """
-            
-            follow_up_response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
+            follow_up_response = openai_client.chat.completions.create(
+                model="gpt-4o-mini",
                 messages=[
-                    {"role": "system", "content": "You are a data analyst helping generate relevant follow-up questions."},
+                    {"role": "system", "content": "You are a data analyst helping generate relevant follow-up questions based on actual data."},
                     {"role": "user", "content": follow_up_prompt}
                 ],
                 max_tokens=200,
-                temperature=0.8
+                temperature=0.3,
+                top_p=0.9
             )
             
             suggested_questions = [q.strip() for q in follow_up_response.choices[0].message.content.split('\n') if q.strip()]
@@ -515,17 +636,15 @@ async def chat_with_data(request: dict):
             # Fallback to simple response if OpenAI fails
             print(f"OpenAI API error: {openai_error}")
             
-            question_lower = question.lower()
-            if "trend" in question_lower or "pattern" in question_lower:
-                response = "Based on your dataset analysis, I can see several interesting trends and patterns. The data shows varying relationships between different variables, with some strong correlations and some surprising outliers. Would you like me to dive deeper into any specific aspect of these patterns?"
-            elif "correlation" in question_lower or "relationship" in question_lower:
-                response = "I've identified several key correlations in your data. The strongest relationships appear to be between numerical variables, with some interesting interactions between categorical and numerical data as well. This suggests there are meaningful patterns that could inform your decision-making."
-            elif "outlier" in question_lower or "anomaly" in question_lower:
-                response = "I found several interesting outliers in your dataset. These unusual data points often tell the most compelling stories and could indicate either data quality issues or genuine anomalies worth investigating further."
-            elif "summary" in question_lower or "overview" in question_lower:
-                response = "Your dataset contains a rich variety of information with both numerical and categorical variables. The data quality is good, and there are several interesting patterns that emerge when we analyze the relationships between different variables."
+            # Create a more specific fallback based on actual data context
+            if "correlation" in dataset_context.lower():
+                response = "🎯 I found some fascinating correlations in your data! The strongest relationships show meaningful patterns that could guide your business decisions."
+            elif "numeric" in dataset_context.lower():
+                response = "📊 Your dataset reveals interesting numerical patterns! I've identified key insights that could significantly impact your analysis and decision-making."
+            elif "categorical" in dataset_context.lower():
+                response = "🏷️ Your categorical data shows compelling patterns! I've discovered insights that could help you understand customer segments and market trends."
             else:
-                response = "That's an interesting question about your dataset! I can see various patterns and relationships in your data that could provide valuable insights. Could you be more specific about what aspect you'd like me to focus on?"
+                response = "🚀 I've analyzed your dataset and found some exciting patterns! The data quality looks great, and I've identified several opportunities for deeper insights."
             
             return {
                 "response": response,
@@ -664,10 +783,12 @@ async def get_analysis_results(file_id: str):
         })
     
     analysis_data = {
-        "file_info": file_info,
-        "data_summary": data_summary,
-        "insights": insights,
-        "charts": charts
+        "file_id": file_id,
+        "statistics": stored_analysis.get("statistics", {}),
+        "missing_values": stored_analysis.get("missing_values", {}),
+        "data_types": stored_analysis.get("data_types", {}),
+        "insights": stored_analysis.get("insights", []),
+        "analyzed_at": stored_file.get("uploaded_at", "2024-01-01T00:00:00Z")
     }
     
     return analysis_data
