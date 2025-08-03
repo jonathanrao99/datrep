@@ -588,6 +588,9 @@ async def get_analysis_results(file_id: str):
         "statistics": stored_analysis.get("statistics", {})
     }
     
+    # Get numeric columns for insights
+    numeric_cols = [col for col, dtype in stored_analysis.get("data_types", {}).items() if dtype == "float64"]
+    
     # Use the stored insights with actual data context
     insights = {
             "insights": stored_analysis.get("insights", []),
