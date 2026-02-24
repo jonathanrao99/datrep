@@ -1,12 +1,38 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
-from fastapi.responses import JSONResponse
 import os
+from pathlib import Path
 from typing import Optional
 
 from mcp.file_system import file_system
 from models.schemas import UploadResponse, ErrorResponse
+from api.auth import require_api_token, require_rate_limit
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_api_token), Depends(require_rate_limit)])
+
+ALLOWED_EXTENSIONS = {".csv", ".xlsx", ".xls"}
+ALLOWED_CONTENT_TYPES = {
+    "text/csv",
+    "application/csv",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/octet-stream",  # fallback from some clients
+}
+
+
+def validate_file_type(file: UploadFile) -> None:
+    filename = Path(file.filename or "").name
+    extension = Path(filename).suffix.lower()
+    content_type = (file.content_type or "").lower()
+
+    if extension not in ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="Unsupported file extension")
+
+    if content_type and content_type not in ALLOWED_CONTENT_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported content type: {content_type}",
+        )
+
 
 async def validate_file_size(file: UploadFile) -> UploadFile:
     """Validate uploaded file size against MAX_FILE_SIZE."""
@@ -45,7 +71,8 @@ async def upload_file(
         if not file.filename:
             raise HTTPException(status_code=400, detail="No file provided")
         
-        # Validate file size (basic check)
+        # Validate type + size
+        validate_file_type(file)
         await validate_file_size(file)
         
         # Save file using File System MCP

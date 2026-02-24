@@ -7,9 +7,9 @@ from mcp.file_system import file_system
 from mcp.openai import openai_mcp
 from services.data_service import data_service
 from models.schemas import AnalysisRequest, AnalysisResponse, ErrorResponse
-from api.auth import require_api_token
+from api.auth import require_api_token, require_rate_limit
 
-router = APIRouter(dependencies=[Depends(require_api_token)])
+router = APIRouter(dependencies=[Depends(require_api_token), Depends(require_rate_limit)])
 
 @router.post("/analyze", response_model=AnalysisResponse)
 async def analyze_data(request: AnalysisRequest):

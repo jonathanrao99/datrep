@@ -57,6 +57,10 @@ DatRep is a modern, AI-powered data analysis platform that transforms how you in
    
    # Add your OpenAI API key to backend/.env
    OPENAI_API_KEY=your_openai_api_key_here
+
+   # Optional hardening (recommended)
+   API_AUTH_TOKEN=your_long_random_token
+   RATE_LIMIT_PER_MINUTE=30
    ```
 
 3. **Start the application**:

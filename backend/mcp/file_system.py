@@ -35,9 +35,10 @@ class FileSystemMCP:
                 detail=f"File type {file_extension} not supported. Allowed: {allowed_extensions}"
             )
         
-        # Generate unique file ID
+        # Generate unique file ID and sanitize filename
         file_id = str(uuid.uuid4())
-        safe_filename = f"{file_id}_{file.filename}"
+        original_name = Path(file.filename).name
+        safe_filename = f"{file_id}_{original_name}"
         file_path = self.upload_dir / safe_filename
         
         # Save file
