@@ -1,79 +1,65 @@
-'use client'
+'use client';
 
-import { useState, useEffect } from 'react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Input } from '@/components/ui/input'
-import { LoadingSpinner } from '@/components/custom/loading-spinner'
-import { FileText, Calendar, BarChart3, Eye, Download, Trash2, Search } from 'lucide-react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { LoadingSpinner } from '@/components/custom/loading-spinner';
+import { FileText, Calendar, BarChart3, Eye, Download, Trash2, Search } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 
 interface Project {
-  id: string
-  filename: string
-  uploaded_at: string
-  file_size: number
-  analysis_status: 'pending' | 'completed' | 'failed'
-  insights_count?: number
-  charts_count?: number
+  id: string;
+  filename: string;
+  uploaded_at: string;
+  file_size: number;
+  analysis_status: 'pending' | 'completed' | 'failed';
+  insights_count?: number;
+  charts_count?: number;
 }
 
 export default function ProjectsPage() {
-  const [projects, setProjects] = useState<Project[]>([])
-  const [loading, setLoading] = useState(true)
-  const [searchTerm, setSearchTerm] = useState('')
-  const router = useRouter()
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const router = useRouter();
 
-  // Mock data for now - replace with actual API call
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? '';
+
   useEffect(() => {
-    const mockProjects: Project[] = [
-      {
-        id: '1',
-        filename: 'sales_data_2024.csv',
-        uploaded_at: '2024-01-15T10:30:00Z',
-        file_size: 1024000,
-        analysis_status: 'completed',
-        insights_count: 5,
-        charts_count: 3
-      },
-      {
-        id: '2',
-        filename: 'customer_feedback.xlsx',
-        uploaded_at: '2024-01-14T15:45:00Z',
-        file_size: 512000,
-        analysis_status: 'completed',
-        insights_count: 4,
-        charts_count: 2
-      },
-      {
-        id: '3',
-        filename: 'inventory_report.csv',
-        uploaded_at: '2024-01-13T09:20:00Z',
-        file_size: 2048000,
-        analysis_status: 'pending',
-        insights_count: 0,
-        charts_count: 0
+    fetchProjects();
+  }, []);
+
+  const fetchProjects = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch(`${apiUrl}/api/projects`);
+      if (response.ok) {
+        const data = await response.json();
+        setProjects(data.projects ?? []);
+      } else {
+        setProjects([]);
       }
-    ]
+    } catch {
+      setProjects([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    setTimeout(() => {
-      setProjects(mockProjects)
-      setLoading(false)
-    }, 1000)
-  }, [])
-
-  const filteredProjects = projects.filter(project =>
+  const filteredProjects = projects.filter((project) =>
     project.filename.toLowerCase().includes(searchTerm.toLowerCase())
-  )
+  );
 
   const formatFileSize = (bytes: number) => {
-    if (bytes === 0) return '0 Bytes'
-    const k = 1024
-    const sizes = ['Bytes', 'KB', 'MB', 'GB']
-    const i = Math.floor(Math.log(bytes) / Math.log(k))
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-  }
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
@@ -81,31 +67,40 @@ export default function ProjectsPage() {
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
-      minute: '2-digit'
-    })
-  }
+      minute: '2-digit',
+    });
+  };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'completed':
-        return <Badge className="bg-green-100 text-green-800">Completed</Badge>
+        return <Badge className="bg-green-100 text-green-800">Completed</Badge>;
       case 'pending':
-        return <Badge className="bg-yellow-100 text-yellow-800">Pending</Badge>
+        return <Badge className="bg-yellow-100 text-yellow-800">Pending</Badge>;
       case 'failed':
-        return <Badge className="bg-red-100 text-red-800">Failed</Badge>
+        return <Badge className="bg-red-100 text-red-800">Failed</Badge>;
       default:
-        return <Badge variant="secondary">Unknown</Badge>
+        return <Badge variant="secondary">Unknown</Badge>;
     }
-  }
+  };
 
   const handleViewProject = (projectId: string) => {
-    router.push(`/view/${projectId}`)
-  }
+    router.push(`/view/${projectId}`);
+  };
 
-  const handleDeleteProject = (projectId: string) => {
-    // TODO: Implement delete functionality
-    setProjects(projects.filter(p => p.id !== projectId))
-  }
+  const handleDeleteProject = async (projectId: string) => {
+    setDeletingId(projectId);
+    try {
+      const response = await fetch(`${apiUrl}/api/projects/${projectId}`, {
+        method: 'DELETE',
+      });
+      if (response.ok) {
+        setProjects((prev) => prev.filter((p) => p.id !== projectId));
+      }
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   if (loading) {
     return (
@@ -114,12 +109,11 @@ export default function ProjectsPage() {
           <LoadingSpinner size="lg" text="Loading projects..." />
         </div>
       </div>
-    )
+    );
   }
 
   return (
     <div className="p-6 space-y-6">
-      {/* Header */}
       <div className="space-y-2">
         <h1 className="text-3xl font-bold">My Projects</h1>
         <p className="text-muted-foreground">
@@ -127,7 +121,6 @@ export default function ProjectsPage() {
         </p>
       </div>
 
-      {/* Search and Actions */}
       <div className="flex items-center justify-between">
         <div className="relative w-96">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -144,7 +137,6 @@ export default function ProjectsPage() {
         </Button>
       </div>
 
-      {/* Projects Grid */}
       {filteredProjects.length === 0 ? (
         <Card>
           <CardContent className="p-12 text-center">
@@ -187,11 +179,11 @@ export default function ProjectsPage() {
                     <>
                       <div className="flex items-center justify-between text-sm">
                         <span className="text-muted-foreground">Insights:</span>
-                        <span className="font-medium">{project.insights_count}</span>
+                        <span className="font-medium">{project.insights_count ?? 0}</span>
                       </div>
                       <div className="flex items-center justify-between text-sm">
                         <span className="text-muted-foreground">Charts:</span>
-                        <span className="font-medium">{project.charts_count}</span>
+                        <span className="font-medium">{project.charts_count ?? 0}</span>
                       </div>
                     </>
                   )}
@@ -215,8 +207,13 @@ export default function ProjectsPage() {
                     size="sm"
                     variant="outline"
                     onClick={() => handleDeleteProject(project.id)}
+                    disabled={deletingId === project.id}
                   >
-                    <Trash2 className="h-4 w-4" />
+                    {deletingId === project.id ? (
+                      <LoadingSpinner size="sm" />
+                    ) : (
+                      <Trash2 className="h-4 w-4" />
+                    )}
                   </Button>
                 </div>
               </CardContent>
@@ -225,5 +222,5 @@ export default function ProjectsPage() {
         </div>
       )}
     </div>
-  )
-} 
+  );
+}

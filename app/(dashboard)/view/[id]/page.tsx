@@ -52,15 +52,23 @@ import {
 
 interface AnalysisData {
   file_id: string
-  statistics: any
-  missing_values: any
-  data_types: any
+  file_info?: { original_filename?: string }
+  statistics?: any
+  missing_values?: any
+  data_types?: any
   insights: Array<{
     title: string
     description: string
     business_impact: string
     confidence: string
   }>
+  insights_full?: {
+    insights?: any[]
+    patterns?: string[]
+    data_quality?: { issues: string[]; recommendations: string[] }
+  }
+  charts?: any[]
+  data_summary?: any
   analyzed_at: string
 }
 
@@ -74,6 +82,9 @@ export default function ViewPage() {
   const [copied, setCopied] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [showChat, setShowChat] = useState(false)
+  const [showAllInsights, setShowAllInsights] = useState(false)
+  const [rawData, setRawData] = useState<Record<string, unknown>[]>([])
+  const TOP_INSIGHTS_COUNT = 8
 
   useEffect(() => {
     const fetchData = async () => {
@@ -81,7 +92,7 @@ export default function ViewPage() {
         const fileId = params.id as string
         
         // Fetch real data from the API
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/analysis/${fileId}`)
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? ''}/api/analysis/${fileId}`)
         
         if (!response.ok) {
           throw new Error('Failed to fetch analysis data')
@@ -92,6 +103,16 @@ export default function ViewPage() {
         // Use the API response directly since it matches our interface
         setData(analysisData)
         setLoading(false)
+        // Fetch raw data for DataTable
+        try {
+          const dataRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? ''}/api/data/${fileId}`)
+          if (dataRes.ok) {
+            const { data: rows } = await dataRes.json()
+            setRawData(Array.isArray(rows) ? rows : [])
+          }
+        } catch {
+          /* ignore */
+        }
       } catch (err) {
         console.error('Error fetching analysis data:', err)
         setError('Failed to load analysis data')
@@ -176,16 +197,29 @@ export default function ViewPage() {
     return numbers ? numbers.slice(0, 3) : []
   }
 
-  const getChartDescription = (type: string, config: any) => {
+  const getChartDescription = (type: string, config: any, title?: string) => {
+    if (title?.includes('Missing Values')) {
+      return 'Shows which columns have the most empty or null cells. Use this to prioritize data cleaning and identify quality issues.'
+    }
+    const x = config?.x_axis?.replace?.(/_/g, ' ') ?? 'categories'
+    const y = config?.y_axis?.replace?.(/_/g, ' ') ?? 'values'
     switch (type) {
       case 'scatter':
-        return `This scatter plot shows the relationship between ${config.x_axis.replace(/_/g, ' ')} and ${config.y_axis.replace(/_/g, ' ')}. Each point represents a data point, and the pattern reveals correlations and trends in your dataset.`
+        return `This scatter plot reveals the relationship between ${x} and ${y}. Each point represents a row in your dataset—look for clusters and trends to uncover correlations.`
       case 'bar':
-        return `This bar chart displays ${config.y_axis.replace(/_/g, ' ')} across different categories. The height of each bar represents the value, making it easy to compare and identify patterns.`
+        return `This bar chart compares ${y} across categories. Use it to quickly identify top performers and spot outliers.`
+      case 'pie':
+        return `This pie chart shows how ${y} is distributed across ${x}. Each slice represents a category's share of the total.`
+      case 'donut':
+        return `This donut chart displays the proportional breakdown of ${y} by ${x}. The center space makes it easier to compare slice sizes.`
       case 'histogram':
-        return `This histogram shows the distribution of ${config.x_axis.replace(/_/g, ' ')}. The bars represent frequency ranges, helping you understand the spread and central tendency of your data.`
+        return `This histogram shows the frequency distribution of ${x}. Use it to understand spread, central tendency, and skew in your data.`
+      case 'area':
+        return `This area chart shows the cumulative trend of ${y} over ${x}. The filled area highlights growth or decline over the sequence.`
+      case 'line':
+        return `This line chart tracks ${y} across ${x}. Ideal for spotting trends and comparing category counts.`
       case 'correlation_matrix':
-        return `This correlation matrix visualizes relationships between all variables. Colors indicate correlation strength, with darker colors showing stronger relationships.`
+        return `This correlation matrix visualizes relationships between variables. Colors indicate strength—darker means stronger correlation.`
       default:
         return `This visualization helps you understand patterns and relationships in your data.`
     }
@@ -207,18 +241,22 @@ export default function ViewPage() {
     setExporting(true)
     try {
       // Create a comprehensive report
+      const insightsArr = Array.isArray(data.insights) ? data.insights : (data.insights_full?.insights ?? []);
+      const patterns = data.insights_full?.patterns ?? [];
+      const dataQuality = data.insights_full?.data_quality ?? { issues: [], recommendations: [] };
+
       const reportData = {
-        filename: data.file_info.original_filename,
+        filename: data.file_info?.original_filename ?? 'dataset',
         analysisDate: new Date().toISOString(),
         summary: {
-          totalRecords: data.data_summary.rows,
-          totalColumns: data.data_summary.columns,
-          insights: data.insights.insights.length,
-          charts: data.charts.length
+          totalRecords: data.data_summary?.rows ?? 0,
+          totalColumns: data.data_summary?.columns ?? 0,
+          insights: insightsArr.length,
+          charts: (data.charts ?? []).length
         },
-        insights: data.insights.insights,
-        patterns: data.insights.patterns,
-        dataQuality: data.insights.data_quality
+        insights: insightsArr,
+        patterns,
+        dataQuality
       }
 
       // Create downloadable JSON report
@@ -226,7 +264,7 @@ export default function ViewPage() {
       const url = window.URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
-      link.download = `${data.file_info.original_filename.replace(/\.[^/.]+$/, '')}_analysis_report.json`
+      link.download = `${(data.file_info?.original_filename ?? 'dataset').replace(/\.[^/.]+$/, '')}_analysis_report.json`
       document.body.appendChild(link)
       link.click()
       document.body.removeChild(link)
@@ -301,12 +339,12 @@ export default function ViewPage() {
           <p className="text-sm text-slate-600 flex items-center gap-3 font-medium">
             <span className="flex items-center gap-1">
               <Clock className="h-4 w-4 text-slate-500" />
-              Analysis completed {formatDate(data.analyzed_at)}
+              Analysis completed on {formatDate(data.analyzed_at)}
             </span>
             <span className="w-1 h-1 bg-slate-400 rounded-full"></span>
-            <span className="flex items-center gap-1">
+            <span className="flex items-center gap-1 font-mono text-xs">
               <Database className="h-4 w-4 text-slate-500" />
-              File ID: {data.file_id}
+              Ref: {data.file_id.slice(0, 8)}...
             </span>
           </p>
         </div>
@@ -339,57 +377,64 @@ export default function ViewPage() {
 
       {/* Key Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <Card className="border-0 shadow-sm hover:shadow-lg transition-all duration-300 bg-gradient-to-br from-blue-50 to-indigo-50">
+        <Card className="border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-semibold text-blue-700 uppercase tracking-wide">File ID</p>
-                <p className="text-3xl font-bold text-blue-900">{data.file_id}</p>
+                <p className="text-sm font-medium text-slate-500 uppercase tracking-wide">Analysis Reference</p>
+                <p className="text-sm font-mono text-slate-800 mt-1 truncate" title={data.file_id}>
+                  {data.file_id.slice(0, 8)}...
+                </p>
               </div>
-              <div className="p-3 bg-blue-100 rounded-xl">
+              <div className="p-3 bg-blue-50 rounded-xl">
                 <Database className="h-8 w-8 text-blue-600" />
               </div>
             </div>
           </CardContent>
         </Card>
         
-        <Card className="border-0 shadow-sm hover:shadow-lg transition-all duration-300 bg-gradient-to-br from-emerald-50 to-green-50">
+        <Card className="border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-semibold text-emerald-700 uppercase tracking-wide">Insights</p>
-                <p className="text-3xl font-bold text-emerald-900">{data.insights.length}</p>
+                <p className="text-sm font-medium text-slate-500 uppercase tracking-wide">Key Findings</p>
+                <p className="text-2xl font-bold text-slate-900 mt-1">{(Array.isArray(data.insights) ? data.insights : []).length}</p>
               </div>
-              <div className="p-3 bg-emerald-100 rounded-xl">
+              <div className="p-3 bg-emerald-50 rounded-xl">
                 <BarChart3 className="h-8 w-8 text-emerald-600" />
               </div>
             </div>
           </CardContent>
         </Card>
         
-        <Card className="border-0 shadow-sm hover:shadow-lg transition-all duration-300 bg-gradient-to-br from-purple-50 to-violet-50">
+        <Card className="border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-semibold text-purple-700 uppercase tracking-wide">Data Types</p>
-                <p className="text-3xl font-bold text-purple-900">{Object.keys(data.data_types).length}</p>
+                <p className="text-sm font-medium text-slate-500 uppercase tracking-wide">Columns Analyzed</p>
+                <p className="text-2xl font-bold text-slate-900 mt-1">{Object.keys(data.data_types || {}).length}</p>
               </div>
-              <div className="p-3 bg-purple-100 rounded-xl">
+              <div className="p-3 bg-purple-50 rounded-xl">
                 <Brain className="h-8 w-8 text-purple-600" />
               </div>
             </div>
           </CardContent>
         </Card>
         
-        <Card className="border-0 shadow-sm hover:shadow-lg transition-all duration-300 bg-gradient-to-br from-orange-50 to-amber-50">
+        <Card className="border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-semibold text-orange-700 uppercase tracking-wide">Missing Values</p>
-                <p className="text-3xl font-bold text-orange-900">{Object.keys(data.missing_values).length}</p>
+                <p className="text-sm font-medium text-slate-500 uppercase tracking-wide">
+                  Columns with Missing Values
+                </p>
+                <p className="text-xs text-slate-400 mt-0.5">Columns with empty cells</p>
+                <p className="text-2xl font-bold text-slate-900 mt-1">
+                  {Object.entries(data.missing_values || {}).filter(([, v]) => (v as number) > 0).length}
+                </p>
               </div>
-              <div className="p-3 bg-orange-100 rounded-xl">
-                <BarChart className="h-8 w-8 text-orange-600" />
+              <div className="p-3 bg-amber-50 rounded-xl">
+                <BarChart className="h-8 w-8 text-amber-600" />
               </div>
             </div>
           </CardContent>
@@ -416,13 +461,13 @@ export default function ViewPage() {
         {/* Overview Tab */}
         <TabsContent value="overview" className="space-y-6">
           {/* Key Insights Summary */}
-          <Card className="border-0 shadow-sm">
+          <Card className="border border-slate-200 shadow-sm">
             <CardHeader>
-              <CardTitle className="text-xl font-bold text-slate-900">Key Insights Summary</CardTitle>
-              <p className="text-sm text-slate-600">The most important discoveries from your data analysis</p>
+              <CardTitle className="text-xl font-bold text-slate-900">Executive Summary</CardTitle>
+              <p className="text-sm text-slate-600">Key discoveries and recommended actions from your data analysis</p>
             </CardHeader>
             <CardContent className="space-y-6">
-              {data.insights && data.insights.length > 0 ? data.insights.slice(0, 3).map((insight, index) => {
+              {(Array.isArray(data.insights) ? data.insights : []).length > 0 ? (Array.isArray(data.insights) ? data.insights : []).slice(0, 3).map((insight, index) => {
                 const quantities = extractQuantities(insight.description)
                 return (
                   <div key={index} className="flex items-start gap-6 p-6 bg-gradient-to-r from-slate-50 to-slate-100 rounded-xl border border-slate-200 hover:shadow-md transition-all duration-300">
@@ -444,8 +489,8 @@ export default function ViewPage() {
                           ))}
                         </div>
                       )}
-                      <div className="p-4 bg-white rounded-lg border border-slate-200 shadow-sm">
-                        <p className="font-bold text-slate-900 text-sm mb-2 uppercase tracking-wide">Business Impact</p>
+                      <div className="p-4 bg-amber-50/50 rounded-lg border border-amber-100">
+                        <p className="font-semibold text-amber-800 text-sm mb-2 uppercase tracking-wide">Recommended Actions</p>
                         <p className="text-slate-700 text-sm leading-relaxed">{insight.business_impact}</p>
                       </div>
                     </div>
@@ -460,9 +505,10 @@ export default function ViewPage() {
           </Card>
 
           {/* Patterns */}
-          <Card className="border-0 shadow-sm">
+          <Card className="border border-slate-200 shadow-sm">
             <CardHeader>
-              <CardTitle className="text-lg font-semibold text-slate-900">Key Patterns</CardTitle>
+              <CardTitle className="text-lg font-semibold text-slate-900">Identified Patterns</CardTitle>
+              <p className="text-sm text-slate-600">Recurring themes and trends in your dataset</p>
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
@@ -481,29 +527,49 @@ export default function ViewPage() {
           </Card>
 
           {/* Key Visualizations */}
-          <Card className="border-0 shadow-sm">
-            <CardHeader>
-              <CardTitle className="text-lg font-semibold text-slate-900">Key Visualizations</CardTitle>
+          <Card className="border-0 shadow-md overflow-hidden">
+            <CardHeader className="bg-gradient-to-r from-slate-50 to-slate-100 border-b border-slate-200">
+              <CardTitle className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <BarChart3 className="h-5 w-5 text-blue-600" />
+                Key Visualizations
+              </CardTitle>
               <p className="text-sm text-slate-600">Interactive charts that reveal important patterns in your data</p>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-6">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                {data.insights && data.insights.length > 0 ? data.insights.slice(0, 2).map((insight, index) => (
-                  <div key={index} className="space-y-4">
+                {(data.charts ?? []).length > 0 ? (data.charts ?? []).slice(0, 4).map((chart: any) => (
+                  <div key={chart.id} className="space-y-4 p-5 rounded-xl border border-slate-200 bg-white hover:shadow-lg transition-shadow">
                     <div className="space-y-2">
-                      <h4 className="text-lg font-semibold text-slate-900">{insight.title}</h4>
+                      <h4 className="text-lg font-bold text-slate-900">{chart.title}</h4>
                       <p className="text-sm text-slate-600 leading-relaxed">
-                        {insight.description}
+                        {getChartDescription(chart.type, chart.config, chart.title)}
                       </p>
                     </div>
-                    <div className="h-80 bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl border border-slate-200 shadow-sm overflow-hidden flex items-center justify-center">
-                      <div className="text-center text-slate-500">
-                        <BarChart3 className="h-12 w-12 mx-auto mb-2" />
-                        <p>Chart visualization coming soon</p>
-                      </div>
+                    <div className="h-80 rounded-xl border border-slate-200 bg-white overflow-hidden">
+                      <ChartRenderer
+                        type={chart.type}
+                        title={chart.title}
+                        config={chart.config}
+                        data={chart.data ?? []}
+                      />
                     </div>
                   </div>
-                )) : (
+                )) : data.insights && data.insights.length > 0 ? (
+                  data.insights.slice(0, 2).map((insight: any, index: number) => (
+                    <div key={index} className="space-y-4">
+                      <div className="space-y-2">
+                        <h4 className="text-lg font-semibold text-slate-900">{insight.title}</h4>
+                        <p className="text-sm text-slate-600 leading-relaxed">{insight.description}</p>
+                      </div>
+                      <div className="h-80 bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl border border-slate-200 shadow-sm overflow-hidden flex items-center justify-center">
+                        <div className="text-center text-slate-500">
+                          <BarChart3 className="h-12 w-12 mx-auto mb-2" />
+                          <p>Chart visualization coming soon</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                ) : (
                   <div className="text-center py-8">
                     <p className="text-slate-600">No visualizations available</p>
                   </div>
@@ -516,7 +582,9 @@ export default function ViewPage() {
         {/* All Insights Tab */}
         <TabsContent value="insights" className="space-y-6">
           <div className="space-y-6">
-            {data.insights && data.insights.length > 0 ? data.insights.map((insight, index) => {
+            {data.insights && data.insights.length > 0 ? (
+              <>
+                {(showAllInsights ? data.insights : data.insights.slice(0, TOP_INSIGHTS_COUNT)).map((insight, index) => {
               const quantities = extractQuantities(insight.description)
               return (
                 <Card key={index} className="border-0 shadow-sm">
@@ -543,15 +611,34 @@ export default function ViewPage() {
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <p className="text-slate-600 leading-relaxed">{insight.description}</p>
-                    <div className="p-4 bg-slate-50 rounded-lg">
-                      <p className="font-medium text-slate-900 mb-1">Business Impact</p>
-                      <p className="text-slate-600">{insight.business_impact}</p>
+                    <p className="text-slate-700 leading-relaxed">{insight.description}</p>
+                    <div className="p-4 bg-amber-50/50 rounded-lg border border-amber-100">
+                      <p className="font-semibold text-amber-800 text-sm mb-1 uppercase tracking-wide">Recommended Actions</p>
+                      <p className="text-slate-700 text-sm leading-relaxed">{insight.business_impact}</p>
                     </div>
+                    {(insight as { fun_fact?: string }).fun_fact && (
+                      <div className="p-4 bg-slate-50 rounded-lg border border-slate-100">
+                        <p className="font-medium text-slate-600 text-sm mb-1">Notable Detail</p>
+                        <p className="text-slate-700 text-sm">{(insight as { fun_fact?: string }).fun_fact}</p>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               )
-            }) : (
+            })}
+                {data.insights.length > TOP_INSIGHTS_COUNT && (
+                  <div className="flex justify-center pt-4">
+                    <Button
+                      variant="outline"
+                      onClick={() => setShowAllInsights(!showAllInsights)}
+                      className="border-slate-200"
+                    >
+                      {showAllInsights ? 'Show top insights only' : `View all ${data.insights.length} insights`}
+                    </Button>
+                  </div>
+                )}
+              </>
+            ) : (
               <div className="text-center py-8">
                 <p className="text-slate-600">No insights available</p>
               </div>
@@ -569,7 +656,7 @@ export default function ViewPage() {
             </CardHeader>
             <CardContent>
               <DataTable 
-                data={[]} 
+                data={rawData} 
                 title="Dataset Overview" 
                 maxRows={15}
                 showPagination={true}
@@ -577,28 +664,52 @@ export default function ViewPage() {
             </CardContent>
           </Card>
 
+          {/* Report Summary Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="p-4 rounded-xl bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100">
+              <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Total Rows</p>
+              <p className="text-2xl font-bold text-slate-900 mt-1">{(data.data_summary?.rows ?? rawData.length) || '—'}</p>
+            </div>
+            <div className="p-4 rounded-xl bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-100">
+              <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wide">Columns</p>
+              <p className="text-2xl font-bold text-slate-900 mt-1">{(data.data_summary?.columns ?? (rawData[0] ? Object.keys(rawData[0]).length : 0)) || '—'}</p>
+            </div>
+            <div className="p-4 rounded-xl bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-100">
+              <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Visualizations</p>
+              <p className="text-2xl font-bold text-slate-900 mt-1">{(data.charts ?? []).length}</p>
+            </div>
+          </div>
+
           {/* All Visualizations Section */}
-          <Card className="border-0 shadow-sm">
-            <CardHeader>
-              <CardTitle className="text-xl font-semibold text-slate-900">Complete Visualizations</CardTitle>
-              <p className="text-sm text-slate-600">Comprehensive charts and graphs that tell the story of your data</p>
+          <Card className="border-0 shadow-md overflow-hidden">
+            <CardHeader className="bg-gradient-to-r from-slate-50 to-slate-100 border-b border-slate-200">
+              <CardTitle className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                <BarChart3 className="h-6 w-6 text-blue-600" />
+                Complete Visualizations
+              </CardTitle>
+              <p className="text-sm text-slate-600">Charts and graphs that tell the story of your data</p>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-6">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                {data.charts.map((chart) => (
-                  <div key={chart.id} className="space-y-4">
+                {(data.charts ?? []).map((chart: any, idx: number) => (
+                  <div 
+                    key={chart.id} 
+                    className={`space-y-4 p-5 rounded-xl border bg-white transition-shadow hover:shadow-lg ${
+                      idx === 0 ? 'lg:col-span-2 border-blue-200 bg-gradient-to-br from-blue-50/30 to-white' : 'border-slate-200'
+                    }`}
+                  >
                     <div className="space-y-2">
-                      <h4 className="text-lg font-semibold text-slate-900">{chart.title}</h4>
+                      <h4 className="text-lg font-bold text-slate-900">{chart.title}</h4>
                       <p className="text-sm text-slate-600 leading-relaxed">
-                        {getChartDescription(chart.type, chart.config)}
+                        {getChartDescription(chart.type, chart.config, chart.title)}
                       </p>
                     </div>
-                    <div className="h-80 bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div className={`overflow-hidden rounded-xl border border-slate-200 bg-white ${idx === 0 ? 'h-96' : 'h-80'}`}>
                       <ChartRenderer
                         type={chart.type}
                         title={chart.title}
                         config={chart.config}
-                        data={[]}
+                        data={chart.data ?? []}
                       />
                     </div>
                   </div>
@@ -621,7 +732,7 @@ export default function ViewPage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {data.insights.data_quality.issues.map((issue, index) => (
+                  {(data.insights_full?.data_quality?.issues ?? []).map((issue: string, index: number) => (
                     <div key={index} className="p-3 bg-red-50 rounded-lg border border-red-200">
                       <p className="text-red-800 text-sm">{issue}</p>
                     </div>
@@ -638,9 +749,9 @@ export default function ViewPage() {
                   Recommendations
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {data.insights.data_quality.recommendations.map((rec, index) => (
+            <CardContent>
+              <div className="space-y-3">
+                {(data.insights_full?.data_quality?.recommendations ?? []).map((rec: string, index: number) => (
                     <div key={index} className="p-3 bg-emerald-50 rounded-lg border border-emerald-200">
                       <p className="text-emerald-800 text-sm">{rec}</p>
                     </div>
@@ -652,40 +763,23 @@ export default function ViewPage() {
         </TabsContent>
       </Tabs>
 
-      {/* Interactive Analysis Section */}
-      <Card className="border-0 shadow-sm">
-        <CardHeader>
-          <CardTitle className="text-lg font-semibold text-slate-900 flex items-center gap-2">
-            <MessageSquare className="h-5 w-5 text-blue-600" />
-            Interactive Analysis
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="text-center py-8">
-            <MessageSquare className="h-12 w-12 text-slate-400 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-slate-900 mb-2">Chat with Your Data</h3>
-            <p className="text-slate-600 mb-4">
-              Ask questions about your dataset and get instant AI-powered answers
-            </p>
-            <Button variant="outline" onClick={() => setShowChat(true)}>
-              <MessageSquare className="h-4 w-4 mr-2" />
-              Start Chat
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Chat FAB - fixed bottom right */}
+      <button
+        onClick={() => setShowChat(true)}
+        className="fixed bottom-6 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-blue-600 text-white shadow-lg transition-all hover:bg-blue-700 hover:scale-110 focus:outline-none focus:ring-4 focus:ring-blue-300"
+        aria-label="Chat with your data"
+      >
+        <MessageSquare className="h-6 w-6" />
+      </button>
 
       {/* Chat Modal */}
-              {showChat && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="w-full max-w-5xl max-h-[90vh] overflow-hidden">
-              <ChatInterface 
-                fileId={params.id as string} 
-                onClose={() => setShowChat(false)} 
-              />
-            </div>
+      {showChat && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="w-full max-w-4xl max-h-[90vh] overflow-hidden rounded-lg">
+            <ChatInterface fileId={params.id as string} onClose={() => setShowChat(false)} />
           </div>
-        )}
+        </div>
+      )}
     </div>
   )
 } 

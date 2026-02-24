@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { FileUploader } from '@/components/custom/file-uploader'
 import { DataTable } from '@/components/custom/data-table'
 import { LoadingSpinner } from '@/components/custom/loading-spinner'
+import { parseFileInBrowser } from '@/lib/client-file-parser'
 import { Upload, FileText, Brain, Database, Clock, AlertCircle, BarChart3, Eye } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
@@ -49,22 +50,32 @@ export default function UploadPage() {
     setError(null)
 
     try {
+      // Parse file in browser first - guarantees we have columns/preview regardless of server
+      const clientParsed = await parseFileInBrowser(file)
+
       const formData = new FormData()
       formData.append('file', file)
+      formData.append('columns', JSON.stringify(clientParsed.columns))
+      formData.append('preview', JSON.stringify(clientParsed.preview))
 
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/upload`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? ''}/api/upload`, {
         method: 'POST',
         body: formData,
       })
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.detail || 'Upload failed')
+        throw new Error(errorData.detail || errorData.error || 'Upload failed')
       }
 
       const data: UploadResponse = await response.json()
-      setUploadResponse(data)
-      console.log('Upload successful:', data)
+      // Use client-parsed data if server returned empty (fallback)
+      const finalData: UploadResponse = {
+        ...data,
+        columns: (data.columns?.length ?? 0) > 0 ? data.columns : clientParsed.columns,
+        preview: (data.preview?.length ?? 0) > 0 ? data.preview : clientParsed.preview,
+      }
+      setUploadResponse(finalData)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed')
     } finally {
@@ -81,7 +92,7 @@ export default function UploadPage() {
     setError(null)
     try {
       // Use the file_id from the upload response
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/analyze`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? ''}/api/analyze`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -93,7 +104,7 @@ export default function UploadPage() {
       
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.detail || 'Analysis failed')
+        throw new Error(errorData.details || errorData.detail || errorData.error || 'Analysis failed')
       }
       
       const data: AnalysisResponse = await response.json()

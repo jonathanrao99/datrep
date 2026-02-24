@@ -23,8 +23,8 @@ import {
 } from 'recharts'
 
 interface ChartConfig {
-  x_axis: string
-  y_axis: string
+  x_axis?: string
+  y_axis?: string
   trend_line?: boolean
   aggregation?: string
   bins?: number
@@ -67,23 +67,24 @@ export function ChartRenderer({ type, title, config, data }: ChartProps) {
     switch (type) {
       case 'scatter':
         return Array.from({ length: 50 }, (_, i) => ({
-          [config.x_axis]: Math.random() * 12000 + 8000, // funding range
-          [config.y_axis]: Math.random() * 50 + 45, // test scores range
+          [config.x_axis ?? 'x']: Math.random() * 12000 + 8000,
+          [config.y_axis ?? 'y']: Math.random() * 50 + 45,
         }))
       
       case 'bar':
+        const barKey = config.y_axis ?? 'value'
         return [
-          { state: 'California', [config.y_axis]: 78.5, fill: COLORS[0] },
-          { state: 'Texas', [config.y_axis]: 72.3, fill: COLORS[1] },
-          { state: 'New York', [config.y_axis]: 75.8, fill: COLORS[2] },
-          { state: 'Florida', [config.y_axis]: 70.2, fill: COLORS[3] },
-          { state: 'Illinois', [config.y_axis]: 73.1, fill: COLORS[4] },
-          { state: 'Pennsylvania', [config.y_axis]: 74.6, fill: COLORS[5] },
+          { state: 'California', [barKey]: 78.5, fill: COLORS[0] },
+          { state: 'Texas', [barKey]: 72.3, fill: COLORS[1] },
+          { state: 'New York', [barKey]: 75.8, fill: COLORS[2] },
+          { state: 'Florida', [barKey]: 70.2, fill: COLORS[3] },
+          { state: 'Illinois', [barKey]: 73.1, fill: COLORS[4] },
+          { state: 'Pennsylvania', [barKey]: 74.6, fill: COLORS[5] },
         ]
       
       case 'histogram':
         return Array.from({ length: 20 }, (_, i) => ({
-          [config.x_axis]: 12 + (i * 0.65), // student-teacher ratio range
+          [config.x_axis ?? 'x']: 12 + (i * 0.65),
           count: Math.floor(Math.random() * 50) + 10,
           fill: COLORS[i % COLORS.length]
         }))
@@ -91,14 +92,14 @@ export function ChartRenderer({ type, title, config, data }: ChartProps) {
       case 'area':
         return Array.from({ length: 30 }, (_, i) => ({
           month: `Month ${i + 1}`,
-          [config.y_axis]: Math.random() * 100 + 50,
+          [config.y_axis ?? 'value']: Math.random() * 100 + 50,
           trend: Math.random() * 20 + 40
         }))
       
       case 'line':
         return Array.from({ length: 24 }, (_, i) => ({
           hour: i,
-          [config.y_axis]: Math.sin(i * 0.3) * 20 + 70,
+          [config.y_axis ?? 'value']: Math.sin(i * 0.3) * 20 + 70,
           trend: Math.cos(i * 0.2) * 15 + 65
         }))
       
@@ -110,195 +111,276 @@ export function ChartRenderer({ type, title, config, data }: ChartProps) {
           { metric: 'Dropout Rate', funding: -0.6, test_scores: -0.8, ratio: 0.5, dropout: 1.0 },
         ]
       
+      case 'pie':
+        return [{ name: 'Sample', value: 100 }]
+      
       default:
         return []
     }
   }
 
   const chartData = data.length > 0 ? data : generateSampleData()
+  const xAxis = config?.x_axis ?? 'x'
+  const yAxis = config?.y_axis ?? 'y'
 
   const renderChart = () => {
     switch (type) {
       case 'scatter':
         return (
-          <ScatterChart data={chartData}>
+          <ScatterChart data={chartData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
             <defs>
               <linearGradient id="scatterGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.8}/>
-                <stop offset="95%" stopColor="#3B82F6" stopOpacity={0.1}/>
+                <stop offset="0%" stopColor="#3B82F6" stopOpacity={0.8}/>
+                <stop offset="100%" stopColor="#1E40AF" stopOpacity={0.6}/>
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
             <XAxis 
-              dataKey={config.x_axis} 
-              name={config.x_axis.replace(/_/g, ' ')}
-              tickFormatter={(value) => `$${value.toLocaleString()}`}
+              dataKey={xAxis} 
+              name={String(xAxis).replace(/_/g, ' ')}
+              tickFormatter={(v) => typeof v === 'number' && v >= 1000 ? `${(v/1000).toFixed(0)}k` : String(v)}
               stroke="#64748B"
-              fontSize={12}
+              fontSize={11}
+              tickLine={false}
+              axisLine={{ stroke: '#CBD5E1' }}
             />
             <YAxis 
-              dataKey={config.y_axis} 
-              name={config.y_axis.replace(/_/g, ' ')}
-              tickFormatter={(value) => `${value}%`}
+              dataKey={yAxis} 
+              name={String(yAxis).replace(/_/g, ' ')}
+              tickFormatter={(v) => typeof v === 'number' && v >= 1000 ? `${(v/1000).toFixed(0)}k` : String(v)}
               stroke="#64748B"
-              fontSize={12}
+              fontSize={11}
+              tickLine={false}
+              axisLine={{ stroke: '#CBD5E1' }}
             />
             <Tooltip 
               contentStyle={{
                 backgroundColor: '#FFFFFF',
                 border: '1px solid #E2E8F0',
-                borderRadius: '8px',
-                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                borderRadius: '10px',
+                boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+                padding: '12px 16px'
               }}
-              formatter={(value, name) => [
-                name === config.x_axis ? `$${value.toLocaleString()}` : `${value}%`,
-                typeof name === 'string' ? name.replace(/_/g, ' ') : name
-              ]}
+              formatter={(value: number) => [typeof value === 'number' ? value.toLocaleString() : value, String(yAxis).replace(/_/g, ' ')]}
+              cursor={{ strokeDasharray: '4 4' }}
             />
-            <Legend />
+            <Legend wrapperStyle={{ fontSize: 12 }} />
             <Scatter 
-              dataKey={config.y_axis} 
+              dataKey={yAxis} 
               fill="url(#scatterGradient)"
               stroke="#1E40AF"
               strokeWidth={1}
-              name={config.y_axis.replace(/_/g, ' ')}
+              fillOpacity={0.8}
+              name={String(yAxis).replace(/_/g, ' ')}
             />
           </ScatterChart>
         )
 
       case 'bar':
+        const barXKey = xAxis || 'state'
+        const barYKey = yAxis || 'value'
         return (
-          <BarChart data={chartData}>
+          <BarChart data={chartData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
             <defs>
-              <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.8}/>
-                <stop offset="95%" stopColor="#1E40AF" stopOpacity={0.9}/>
-              </linearGradient>
+              {COLORS.map((c, i) => (
+                <linearGradient key={i} id={`barGrad-${i}`} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={c} stopOpacity={0.9}/>
+                  <stop offset="100%" stopColor={c} stopOpacity={0.7}/>
+                </linearGradient>
+              ))}
             </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
-            <XAxis dataKey="state" stroke="#64748B" fontSize={12} />
+            <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
+            <XAxis 
+              dataKey={barXKey} 
+              stroke="#64748B" 
+              fontSize={11} 
+              tick={{ fontSize: 10 }}
+              tickLine={false}
+              axisLine={{ stroke: '#CBD5E1' }}
+            />
             <YAxis 
-              tickFormatter={(value) => `${value}%`}
+              tickFormatter={(value) => typeof value === 'number' && value >= 1000 ? `${(value/1000).toFixed(0)}k` : String(value)}
               stroke="#64748B"
-              fontSize={12}
+              fontSize={11}
+              tickLine={false}
+              axisLine={{ stroke: '#CBD5E1' }}
             />
             <Tooltip 
               contentStyle={{
                 backgroundColor: '#FFFFFF',
                 border: '1px solid #E2E8F0',
-                borderRadius: '8px',
-                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                borderRadius: '10px',
+                boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+                padding: '12px 16px'
               }}
-              formatter={(value) => [`${value}%`, 'Average Test Score']}
+              formatter={(value: number) => [typeof value === 'number' ? value.toLocaleString() : value, barYKey.replace(/_/g, ' ')]}
+              cursor={{ fill: 'rgba(59, 130, 246, 0.05)' }}
             />
-            <Legend />
+            <Legend wrapperStyle={{ fontSize: 12 }} />
             <Bar 
-              dataKey={config.y_axis} 
-              fill="url(#barGradient)"
-              radius={[4, 4, 0, 0]}
-              name="Average Test Score"
-            />
+              dataKey={barYKey} 
+              radius={[6, 6, 0, 0]}
+              name={barYKey.replace(/_/g, ' ')}
+            >
+              {chartData.map((_, index) => (
+                <Cell key={index} fill={`url(#barGrad-${index % COLORS.length})`} />
+              ))}
+            </Bar>
           </BarChart>
         )
 
       case 'histogram':
         return (
-          <BarChart data={chartData}>
+          <BarChart data={chartData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
             <defs>
               <linearGradient id="histogramGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#10B981" stopOpacity={0.8}/>
-                <stop offset="95%" stopColor="#059669" stopOpacity={0.9}/>
+                <stop offset="0%" stopColor="#10B981" stopOpacity={0.85}/>
+                <stop offset="100%" stopColor="#059669" stopOpacity={0.7}/>
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
+            <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
             <XAxis 
-              dataKey={config.x_axis}
-              tickFormatter={(value) => value.toFixed(1)}
+              dataKey={xAxis}
+              tickFormatter={(value) => typeof value === 'number' ? value.toFixed(1) : String(value)}
               stroke="#64748B"
-              fontSize={12}
+              fontSize={11}
+              tickLine={false}
+              axisLine={{ stroke: '#CBD5E1' }}
             />
-            <YAxis stroke="#64748B" fontSize={12} />
+            <YAxis stroke="#64748B" fontSize={11} tickLine={false} axisLine={{ stroke: '#CBD5E1' }} />
             <Tooltip 
               contentStyle={{
                 backgroundColor: '#FFFFFF',
                 border: '1px solid #E2E8F0',
-                borderRadius: '8px',
-                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                borderRadius: '10px',
+                boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+                padding: '12px 16px'
               }}
-              formatter={(value, name) => [value, 'Number of Schools']}
+              formatter={(value: number) => [value, 'Count']}
+              cursor={{ fill: 'rgba(16, 185, 129, 0.05)' }}
             />
-            <Legend />
+            <Legend wrapperStyle={{ fontSize: 12 }} />
             <Bar 
               dataKey="count" 
               fill="url(#histogramGradient)"
-              radius={[4, 4, 0, 0]}
-              name="Number of Schools"
+              radius={[6, 6, 0, 0]}
+              name="Count"
             />
           </BarChart>
         )
 
-      case 'area':
+      case 'area': {
+        const areaXKey = xAxis || 'label'
+        const areaYKey = yAxis || 'value'
         return (
-          <AreaChart data={chartData}>
+          <AreaChart data={chartData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
             <defs>
               <linearGradient id="areaGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#8B5CF6" stopOpacity={0.8}/>
-                <stop offset="95%" stopColor="#8B5CF6" stopOpacity={0.1}/>
+                <stop offset="0%" stopColor="#8B5CF6" stopOpacity={0.6}/>
+                <stop offset="100%" stopColor="#8B5CF6" stopOpacity={0.05}/>
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
-            <XAxis dataKey="month" stroke="#64748B" fontSize={12} />
-            <YAxis stroke="#64748B" fontSize={12} />
+            <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
+            <XAxis dataKey={areaXKey} stroke="#64748B" fontSize={11} tickLine={false} axisLine={{ stroke: '#CBD5E1' }} />
+            <YAxis stroke="#64748B" fontSize={11} tickLine={false} axisLine={{ stroke: '#CBD5E1' }} tickFormatter={(v) => typeof v === 'number' && v >= 1000 ? `${(v/1000).toFixed(0)}k` : String(v)} />
             <Tooltip 
               contentStyle={{
                 backgroundColor: '#FFFFFF',
                 border: '1px solid #E2E8F0',
-                borderRadius: '8px',
-                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                borderRadius: '10px',
+                boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+                padding: '12px 16px'
               }}
+              formatter={(value: number) => [typeof value === 'number' ? value.toLocaleString() : value, areaYKey.replace(/_/g, ' ')]}
+              cursor={{ stroke: '#8B5CF6', strokeWidth: 1, strokeDasharray: '4 4' }}
             />
-            <Legend />
+            <Legend wrapperStyle={{ fontSize: 12 }} />
             <Area 
               type="monotone" 
-              dataKey={config.y_axis} 
+              dataKey={areaYKey} 
               stroke="#8B5CF6" 
               fill="url(#areaGradient)"
-              strokeWidth={2}
+              strokeWidth={2.5}
             />
           </AreaChart>
         )
+      }
 
-      case 'line':
+      case 'line': {
+        const lineXKey = xAxis || 'name'
+        const lineYKey = yAxis || 'value'
         return (
-          <LineChart data={chartData}>
-            <defs>
-              <linearGradient id="lineGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#F59E0B" stopOpacity={0.8}/>
-                <stop offset="95%" stopColor="#F59E0B" stopOpacity={0.1}/>
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
-            <XAxis dataKey="hour" stroke="#64748B" fontSize={12} />
-            <YAxis stroke="#64748B" fontSize={12} />
+          <LineChart data={chartData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
+            <XAxis dataKey={lineXKey} stroke="#64748B" fontSize={11} tickLine={false} axisLine={{ stroke: '#CBD5E1' }} angle={-45} textAnchor="end" height={60} />
+            <YAxis stroke="#64748B" fontSize={11} tickLine={false} axisLine={{ stroke: '#CBD5E1' }} />
             <Tooltip 
               contentStyle={{
                 backgroundColor: '#FFFFFF',
                 border: '1px solid #E2E8F0',
-                borderRadius: '8px',
-                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                borderRadius: '10px',
+                boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+                padding: '12px 16px'
               }}
+              formatter={(value: number) => [typeof value === 'number' ? value.toLocaleString() : value, lineYKey.replace(/_/g, ' ')]}
+              cursor={{ stroke: '#F59E0B', strokeWidth: 1, strokeDasharray: '4 4' }}
             />
-            <Legend />
+            <Legend wrapperStyle={{ fontSize: 12 }} />
             <Line 
               type="monotone" 
-              dataKey={config.y_axis} 
+              dataKey={lineYKey} 
               stroke="#F59E0B" 
-              strokeWidth={3}
+              strokeWidth={2.5}
               dot={{ fill: '#F59E0B', strokeWidth: 2, r: 4 }}
               activeDot={{ r: 6, stroke: '#F59E0B', strokeWidth: 2 }}
             />
           </LineChart>
         )
+      }
+
+      case 'pie':
+      case 'donut': {
+        const pieData = chartData.length > 0 ? chartData : []
+        const pieNameKey = xAxis || 'name'
+        const pieValueKey = yAxis || 'value'
+        const total = pieData.reduce((s, d) => s + (Number(d[pieValueKey]) || 0), 0)
+        return (
+          <PieChart>
+            <Pie
+              data={pieData}
+              dataKey={pieValueKey}
+              nameKey={pieNameKey}
+              cx="50%"
+              cy="50%"
+              outerRadius={type === 'donut' ? '75%' : '80%'}
+              innerRadius={type === 'donut' ? '45%' : 0}
+              paddingAngle={2}
+              label={({ [pieNameKey]: name, [pieValueKey]: val }) => {
+                const pct = total > 0 ? ((Number(val) / total) * 100).toFixed(1) : '0'
+                const label = String(name).length > 15 ? String(name).slice(0, 12) + '…' : name
+                return `${label} (${pct}%)`
+              }}
+            >
+              {pieData.map((_, index) => (
+                <Cell key={index} fill={COLORS[index % COLORS.length]} stroke="#fff" strokeWidth={2} />
+              ))}
+            </Pie>
+            <Tooltip 
+              contentStyle={{
+                backgroundColor: '#FFFFFF',
+                border: '1px solid #E2E8F0',
+                borderRadius: '10px',
+                boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+                padding: '12px 16px'
+              }}
+              formatter={(value: number) => {
+                const pct = total > 0 ? ((Number(value) / total) * 100).toFixed(1) : '0'
+                return [`${typeof value === 'number' ? value.toLocaleString() : value} (${pct}%)`, pieValueKey.replace(/_/g, ' ')]
+              }}
+            />
+          </PieChart>
+        )
+      }
 
       case 'correlation_matrix':
         return (

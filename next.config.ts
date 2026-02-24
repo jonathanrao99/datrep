@@ -13,8 +13,5 @@ export default {
       }
     ]
   },
-  // Increase body size limit for API routes
-  experimental: {
-    serverComponentsExternalPackages: ['@prisma/client']
-  }
+  serverExternalPackages: ['@prisma/client']
 };

@@ -1,13 +1,10 @@
 import Link from 'next/link';
 import {
   Home,
-  LineChart,
-  Package,
+  Database,
   Package2,
   PanelLeft,
   Settings,
-  ShoppingCart,
-  Users2,
   Upload,
   FolderOpen,
   BarChart3
@@ -30,7 +27,6 @@ import {
 } from '@/components/ui/tooltip';
 import { Analytics } from '@vercel/analytics/react';
 import { User } from './user';
-import { VercelLogo } from '@/components/icons';
 import Providers from './providers';
 import { NavItem } from './nav-item';
 import { SearchInput } from './search';
@@ -66,11 +62,11 @@ function DesktopNav() {
     <aside className="fixed inset-y-0 left-0 z-10 hidden w-14 flex-col border-r bg-background sm:flex">
       <nav className="flex flex-col items-center gap-4 px-2 sm:py-5">
         <Link
-          href="https://vercel.com/templates/next.js/admin-dashboard-tailwind-postgres-react-nextjs"
+          href="/"
           className="group flex h-9 w-9 shrink-0 items-center justify-center gap-2 rounded-full bg-primary text-lg font-semibold text-primary-foreground md:h-8 md:w-8 md:text-base"
         >
-          <VercelLogo className="h-3 w-3 transition-all group-hover:scale-110" />
-          <span className="sr-only">Acme Inc</span>
+          <Database className="h-5 w-5 transition-all group-hover:scale-110" />
+          <span className="sr-only">DatRep</span>
         </Link>
 
         <NavItem href="/" label="Dashboard">
@@ -85,7 +81,7 @@ function DesktopNav() {
           <FolderOpen className="h-5 w-5" />
         </NavItem>
 
-        <NavItem href="#" label="Analytics">
+        <NavItem href="/analytics" label="Analytics">
           <BarChart3 className="h-5 w-5" />
         </NavItem>
       </nav>
@@ -119,11 +115,11 @@ function MobileNav() {
       <SheetContent side="left" className="sm:max-w-xs">
         <nav className="grid gap-6 text-lg font-medium">
           <Link
-            href="#"
+            href="/"
             className="group flex h-10 w-10 shrink-0 items-center justify-center gap-2 rounded-full bg-primary text-lg font-semibold text-primary-foreground md:text-base"
           >
-            <Package2 className="h-5 w-5 transition-all group-hover:scale-110" />
-            <span className="sr-only">Vercel</span>
+            <Database className="h-5 w-5 transition-all group-hover:scale-110" />
+            <span className="sr-only">DatRep</span>
           </Link>
           <Link
             href="/"
@@ -147,7 +143,7 @@ function MobileNav() {
             My Projects
           </Link>
           <Link
-            href="#"
+            href="/analytics"
             className="flex items-center gap-4 px-2.5 text-muted-foreground hover:text-foreground"
           >
             <BarChart3 className="h-5 w-5" />

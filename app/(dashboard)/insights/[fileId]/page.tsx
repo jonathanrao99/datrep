@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { LoadingSpinner } from '@/components/custom/loading-spinner'
+import { ChatInterface } from '@/components/custom/chat-interface'
 import { 
   Brain, 
   Download, 
@@ -26,7 +27,8 @@ import {
   TrendingUp, 
   CheckCircle, 
   AlertCircle,
-  Share2
+  Share2,
+  MessageSquare
 } from 'lucide-react'
 
 interface AnalysisResponse {
@@ -46,6 +48,9 @@ export default function InsightsPage() {
   const [analysisResponse, setAnalysisResponse] = useState<AnalysisResponse | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [showChat, setShowChat] = useState(false)
+  const [showAllInsights, setShowAllInsights] = useState(false)
+  const TOP_INSIGHTS_COUNT = 8
 
   useEffect(() => {
     if (fileId) {
@@ -58,7 +63,7 @@ export default function InsightsPage() {
       setIsLoading(true)
       setError(null)
       
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/analysis/${fileId}`)
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? ''}/api/analysis/${fileId}`)
       
       if (!response.ok) {
         throw new Error('Analysis not found')
@@ -71,7 +76,7 @@ export default function InsightsPage() {
         throw new Error('Invalid analysis data')
       }
       
-      // Ensure insights is an array
+      // Ensure insights is an array (API normalizes JSON-in-description already)
       if (!Array.isArray(data.insights)) {
         console.warn('Insights is not an array:', data.insights)
         data.insights = []
@@ -87,7 +92,10 @@ export default function InsightsPage() {
 
   const getInsightIcon = (title: string) => {
     const lowerTitle = title.toLowerCase()
-    if (lowerTitle.includes('funding') || lowerTitle.includes('money') || lowerTitle.includes('cost')) {
+    if (lowerTitle.includes('retention') || lowerTitle.includes('attrition') || lowerTitle.includes('turnover') || lowerTitle.includes('employee')) {
+      return <Users className="h-4 w-4 text-rose-600" />
+    }
+    if (lowerTitle.includes('funding') || lowerTitle.includes('money') || lowerTitle.includes('cost') || lowerTitle.includes('sales') || lowerTitle.includes('revenue') || lowerTitle.includes('gross') || lowerTitle.includes('returns') || lowerTitle.includes('discount')) {
       return <DollarSign className="h-4 w-4 text-emerald-600" />
     }
     if (lowerTitle.includes('teacher') || lowerTitle.includes('class') || lowerTitle.includes('ratio')) {
@@ -108,31 +116,38 @@ export default function InsightsPage() {
     if (lowerTitle.includes('size') || lowerTitle.includes('volume') || lowerTitle.includes('records')) {
       return <BarChart3 className="h-4 w-4 text-cyan-600" />
     }
+    if (lowerTitle.includes('research') || lowerTitle.includes('development') || lowerTitle.includes('workforce') || lowerTitle.includes('department')) {
+      return <BarChart3 className="h-4 w-4 text-indigo-600" />
+    }
     return <Lightbulb className="h-4 w-4 text-amber-600" />
   }
 
   const getConfidenceBadge = (confidence: string) => {
     switch (confidence) {
       case 'high':
-        return <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200">
-          High Confidence
-        </Badge>
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-semibold tracking-wide border border-emerald-200 shadow-sm">
+            <CheckCircle className="h-3.5 w-3.5" />
+            High Confidence
+          </span>
+        )
       case 'medium':
-        return <Badge className="bg-amber-50 text-amber-700 border-amber-200">
-          Medium Confidence
-        </Badge>
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-50 text-amber-800 text-xs font-semibold tracking-wide border border-amber-200 shadow-sm">
+            <Shield className="h-3.5 w-3.5" />
+            Medium Confidence
+          </span>
+        )
       case 'low':
-        return <Badge className="bg-red-50 text-red-700 border-red-200">
-          Low Confidence
-        </Badge>
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-50 text-red-700 text-xs font-semibold tracking-wide border border-red-200 shadow-sm">
+            <AlertCircle className="h-3.5 w-3.5" />
+            Low Confidence
+          </span>
+        )
       default:
-        return <Badge variant="secondary">Unknown</Badge>
+        return <Badge variant="secondary" className="text-xs font-medium">Unknown</Badge>
     }
-  }
-
-  const extractQuantities = (description: string) => {
-    const numbers = description.match(/\d+(?:\.\d+)?%?/g) || []
-    return numbers.slice(0, 3) // Return first 3 numbers found
   }
 
   const formatDate = (dateString: string) => {
@@ -142,6 +157,21 @@ export default function InsightsPage() {
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit'
+    })
+  }
+
+  // Highlight numbers and percentages in text for premium scannability
+  const highlightNumbers = (text: string) => {
+    const parts = text.split(/(\d+(?:,\d{3})*(?:\.\d+)?%?|\$\d+(?:,\d{3})*(?:\.\d{2})?)/g)
+    return parts.map((part, i) => {
+      if (/^\d+(?:,\d{3})*(?:\.\d+)?%?$/.test(part) || /^\$\d+(?:,\d{3})*(?:\.\d{2})?$/.test(part)) {
+        return (
+          <span key={i} className="font-semibold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded-md border border-indigo-100">
+            {part}
+          </span>
+        )
+      }
+      return <span key={i}>{part}</span>
     })
   }
 
@@ -202,141 +232,222 @@ export default function InsightsPage() {
   }
 
   return (
-    <div className="p-6 space-y-8 max-w-6xl mx-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="space-y-2">
-          <div className="flex items-center gap-3">
-            <Button 
-              onClick={() => router.push('/upload')} 
-              variant="ghost" 
-              size="sm"
-            >
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back
-            </Button>
-            <h1 className="text-3xl font-bold text-slate-900">AI Insights</h1>
+    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
+      <div className="p-8 lg:p-12 space-y-12 max-w-5xl mx-auto">
+        {/* Header */}
+        <header className="pb-8 border-b border-slate-200">
+          <div className="flex items-start justify-between gap-6">
+            <div className="space-y-3">
+              <div className="flex items-center gap-4">
+                <Button 
+                  onClick={() => router.push('/upload')} 
+                  variant="outline" 
+                  size="sm"
+                  className="text-slate-600 hover:text-slate-900 hover:bg-slate-100 border-slate-200 -ml-2"
+                >
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Back
+                </Button>
+                <span className="text-slate-300 font-light">|</span>
+                <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
+                  AI Insights
+                </h1>
+              </div>
+              <p className="text-slate-600 text-[15px] leading-relaxed max-w-xl">
+                {Array.isArray(analysisResponse.insights) && analysisResponse.insights.length > 0
+                  ? `Your dataset has been analyzed. ${analysisResponse.insights.length} key finding${analysisResponse.insights.length === 1 ? ' was' : 's were'} identified.`
+                  : 'Your analysis is ready for review.'}
+              </p>
+            </div>
+            
+            <div className="flex gap-3 shrink-0">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="border-slate-200 bg-white hover:bg-slate-50 text-slate-600 hover:text-slate-800 shadow-sm"
+              >
+                <Share2 className="h-4 w-4 mr-2" />
+                Share
+              </Button>
+              <Button 
+                size="sm"
+                onClick={() => router.push(`/view/${fileId}`)}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-md hover:shadow-lg transition-all"
+              >
+                <BarChart3 className="h-4 w-4 mr-2" />
+                View Full Analysis
+              </Button>
+            </div>
           </div>
-          <p className="text-slate-600">
-            Discovered {Array.isArray(analysisResponse.insights) ? analysisResponse.insights.length : 0} insights from your data analysis
-          </p>
-        </div>
-        
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm">
-            <Share2 className="h-4 w-4 mr-2" />
-            Share
-          </Button>
-          <Button 
-            variant="outline" 
-            size="sm"
-            onClick={() => router.push(`/view/${fileId}`)}
-          >
-            <BarChart3 className="h-4 w-4 mr-2" />
-            View Full Analysis
-          </Button>
-        </div>
-      </div>
+        </header>
 
-      {/* Analysis Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card className="border-0 shadow-sm">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <Database className="h-5 w-5 text-slate-500" />
-              <div>
-                <p className="text-sm text-slate-600">File ID</p>
-                <p className="font-medium text-slate-900">{analysisResponse.file_id}</p>
+        {/* Analysis Summary */}
+        <section className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          <div className="p-6 rounded-2xl bg-white border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
+            <div className="flex items-center gap-4">
+              <div className="p-3.5 rounded-xl bg-gradient-to-br from-slate-100 to-slate-50">
+                <Database className="h-5 w-5 text-slate-600" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest">Analysis Reference</p>
+                <p className="text-sm font-mono font-medium text-slate-800 truncate mt-1" title={analysisResponse.file_id}>
+                  {analysisResponse.file_id.slice(0, 8)}...
+                </p>
               </div>
             </div>
-          </CardContent>
-        </Card>
+          </div>
 
-        <Card className="border-0 shadow-sm">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <Brain className="h-5 w-5 text-slate-500" />
+          <div className="p-6 rounded-2xl bg-gradient-to-br from-indigo-50 to-white border border-indigo-100 shadow-sm hover:shadow-md transition-shadow">
+            <div className="flex items-center gap-4">
+              <div className="p-3.5 rounded-xl bg-gradient-to-br from-indigo-600 to-indigo-700 shadow-sm">
+                <Brain className="h-5 w-5 text-white" />
+              </div>
               <div>
-                <p className="text-sm text-slate-600">Insights</p>
-                <p className="font-medium text-slate-900">{Array.isArray(analysisResponse.insights) ? analysisResponse.insights.length : 0}</p>
+                <p className="text-[11px] font-semibold text-indigo-600 uppercase tracking-widest">Key Findings</p>
+                <p className="text-xl font-bold text-slate-900 mt-1">
+                  {Array.isArray(analysisResponse.insights) ? analysisResponse.insights.length : 0} insight{analysisResponse.insights?.length !== 1 ? 's' : ''} identified
+                </p>
               </div>
             </div>
-          </CardContent>
-        </Card>
+          </div>
 
-        <Card className="border-0 shadow-sm">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <Clock className="h-5 w-5 text-slate-500" />
+          <div className="p-6 rounded-2xl bg-white border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
+            <div className="flex items-center gap-4">
+              <div className="p-3.5 rounded-xl bg-gradient-to-br from-slate-100 to-slate-50">
+                <Clock className="h-5 w-5 text-slate-600" />
+              </div>
               <div>
-                <p className="text-sm text-slate-600">Analyzed At</p>
-                <p className="font-medium text-slate-900">{formatDate(analysisResponse.analyzed_at)}</p>
+                <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest">Completed</p>
+                <p className="text-sm font-medium text-slate-700 mt-1">{formatDate(analysisResponse.analyzed_at)}</p>
               </div>
             </div>
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+        </section>
 
-      {/* Insights Grid */}
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold text-slate-900">Key Insights</h2>
-          <Badge variant="secondary">{Array.isArray(analysisResponse.insights) ? analysisResponse.insights.length : 0} Discovered</Badge>
-        </div>
+        {/* Insights */}
+        <section className="space-y-8">
+          <div className="flex items-start gap-4">
+            <div className="p-3 rounded-xl bg-gradient-to-br from-slate-800 to-slate-900 shadow-md">
+              <TrendingUp className="h-5 w-5 text-white" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-slate-900 tracking-tight">Executive Summary</h2>
+              <p className="text-slate-600 text-sm mt-2 leading-relaxed max-w-2xl">
+                Insights generated from your dataset. Each finding includes a description, recommended actions, and confidence assessment.
+              </p>
+            </div>
+          </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {Array.isArray(analysisResponse.insights) && analysisResponse.insights.length > 0 ? (
-            analysisResponse.insights.map((insight, index) => {
-              const quantities = extractQuantities(insight.description)
-              
-              return (
-                <Card key={index} className="border-0 shadow-sm hover:shadow-md transition-shadow">
-                  <CardHeader className="pb-3">
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-2">
-                        {getInsightIcon(insight.title)}
-                        <CardTitle className="text-lg">{insight.title}</CardTitle>
+          <div className="space-y-8">
+            {Array.isArray(analysisResponse.insights) && analysisResponse.insights.length > 0 ? (
+              <>
+                {(showAllInsights ? analysisResponse.insights : analysisResponse.insights.slice(0, TOP_INSIGHTS_COUNT)).map((insight, index) => {
+                const title = insight.title?.replace(/^[^\w\s]+/, '').trim() || `Insight ${index + 1}`
+                const description = typeof insight.description === 'string' ? insight.description : ''
+                const businessImpact = insight.business_impact || ''
+                const funFact = (insight as { fun_fact?: string }).fun_fact
+                
+                return (
+                  <article 
+                    key={index} 
+                    className="group rounded-2xl bg-white border border-slate-200 shadow-md overflow-hidden hover:shadow-xl hover:border-slate-300 transition-all duration-300"
+                  >
+                    <div className="border-l-4 border-indigo-500">
+                      <div className="p-6 lg:p-8">
+                        <div className="flex items-start gap-5">
+                          <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-50 to-slate-50 border border-indigo-100/50 shrink-0 group-hover:from-indigo-100/50 group-hover:to-slate-100/50 transition-colors">
+                            {getInsightIcon(title)}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <h3 className="text-xl font-bold text-slate-900 leading-snug tracking-tight">
+                              {title}
+                            </h3>
+                            <div className="mt-3">
+                              {getConfidenceBadge(insight.confidence)}
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                      {getConfidenceBadge(insight.confidence)}
-                    </div>
-                    
-                    {quantities.length > 0 && (
-                      <div className="flex gap-2 mt-2">
-                        {quantities.map((qty, qtyIndex) => (
-                          <Badge key={qtyIndex} variant="outline" className="text-xs">
-                            {qty}
-                          </Badge>
-                        ))}
+                      
+                      <div className="px-6 lg:px-8 pb-6 lg:pb-8 space-y-6">
+                        <div className="space-y-2">
+                          <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-widest">Summary</p>
+                          <div className="text-slate-700 leading-relaxed text-[15px]">
+                            {highlightNumbers(description)}
+                          </div>
+                        </div>
+                        
+                        <div className="rounded-xl bg-gradient-to-br from-amber-50 to-orange-50/50 border border-amber-200/60 p-5">
+                          <div className="flex items-center gap-2 mb-3">
+                            <Rocket className="h-4 w-4 text-amber-600" />
+                            <p className="text-[11px] font-semibold text-amber-800 uppercase tracking-widest">Recommended Actions</p>
+                          </div>
+                          <div className="text-slate-700 leading-relaxed text-[15px]">
+                            {highlightNumbers(businessImpact)}
+                          </div>
+                        </div>
+
+                        {funFact && (
+                          <div className="rounded-xl bg-gradient-to-br from-slate-50 to-slate-100/50 border border-slate-200 p-5">
+                            <div className="flex items-center gap-2 mb-3">
+                              <Lightbulb className="h-4 w-4 text-amber-500" />
+                              <p className="text-[11px] font-semibold text-slate-600 uppercase tracking-widest">Notable Detail</p>
+                            </div>
+                            <div className="text-slate-700 leading-relaxed text-[15px]">
+                              {highlightNumbers(funFact)}
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </CardHeader>
-                  
-                  <CardContent className="space-y-4">
-                    <div 
-                      className="text-sm text-slate-700 leading-relaxed"
-                      dangerouslySetInnerHTML={{ __html: insight.description }}
-                    />
-                    
-                    <div className="pt-3 border-t border-slate-100">
-                      <p className="text-xs font-medium text-slate-600 mb-1">Business Impact</p>
-                      <p className="text-sm text-slate-700">{insight.business_impact}</p>
                     </div>
-                  </CardContent>
-                </Card>
-              )
-            })
+                  </article>
+                )
+              })}
+                {analysisResponse.insights.length > TOP_INSIGHTS_COUNT && (
+                  <div className="flex justify-center pt-4">
+                    <Button
+                      variant="outline"
+                      onClick={() => setShowAllInsights(!showAllInsights)}
+                      className="border-slate-200"
+                    >
+                      {showAllInsights ? 'Show top insights only' : `View all ${analysisResponse.insights.length} insights`}
+                    </Button>
+                  </div>
+                )}
+              </>
           ) : (
-            <Card className="border-0 shadow-sm col-span-full">
-              <CardContent className="p-6">
-                <div className="text-center">
-                  <Brain className="h-12 w-12 text-slate-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-slate-900 mb-2">No Insights Available</h3>
-                  <p className="text-slate-600">No insights were generated for this analysis.</p>
+            <article className="rounded-2xl bg-white border border-slate-200 shadow-md p-16">
+              <div className="text-center">
+                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-slate-100 to-slate-50 border border-slate-200 flex items-center justify-center mx-auto mb-5">
+                  <Brain className="h-8 w-8 text-slate-400" />
                 </div>
-              </CardContent>
-            </Card>
+                <h3 className="text-xl font-bold text-slate-900 mb-2">No Insights Available</h3>
+                <p className="text-slate-600 text-sm max-w-sm mx-auto leading-relaxed">
+                  No insights were generated for this analysis. Try re-analyzing or uploading a different file.
+                </p>
+              </div>
+            </article>
           )}
+          </div>
+        </section>
+
+      {/* Chat FAB - fixed bottom right */}
+      <button
+        onClick={() => setShowChat(true)}
+        className="fixed bottom-6 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-indigo-600 text-white shadow-lg shadow-indigo-900/30 transition-all hover:bg-indigo-700 hover:scale-105 focus:outline-none focus:ring-4 focus:ring-indigo-300 focus:ring-offset-2"
+        aria-label="Chat with your data"
+      >
+        <MessageSquare className="h-6 w-6" />
+      </button>
+
+      {/* Chat Modal */}
+      {showChat && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="w-full max-w-4xl max-h-[90vh] overflow-hidden rounded-2xl shadow-2xl">
+            <ChatInterface fileId={fileId} onClose={() => setShowChat(false)} />
+          </div>
         </div>
+      )}
       </div>
     </div>
   )

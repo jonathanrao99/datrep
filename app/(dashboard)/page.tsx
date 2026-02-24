@@ -1,58 +1,55 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { 
-  Upload, 
-  FolderOpen, 
-  BarChart3, 
-  Brain, 
-  TrendingUp, 
+import {
+  Upload,
+  FolderOpen,
+  BarChart3,
+  Brain,
+  TrendingUp,
   FileText,
-  Users,
   Activity,
-  ArrowRight
+  ArrowRight,
 } from 'lucide-react';
 import Link from 'next/link';
+import { auth } from '@/lib/auth';
+import { getDashboardStats, getFilesByUserId } from '@/lib/db';
 
-export default function DashboardPage() {
-  // Mock data - replace with actual data from your backend
-  const stats = {
-    totalProjects: 12,
-    totalInsights: 48,
-    totalCharts: 36,
-    recentUploads: 3
-  };
+export default async function DashboardPage() {
+  const session = await auth();
+  const userId = session?.user?.id ?? session?.user?.email ?? undefined;
 
-  const recentProjects = [
-    {
-      id: '1',
-      name: 'sales_data_2024.csv',
-      uploaded_at: '2024-01-15T10:30:00Z',
-      insights_count: 5,
-      status: 'completed'
-    },
-    {
-      id: '2',
-      name: 'customer_feedback.xlsx',
-      uploaded_at: '2024-01-14T15:45:00Z',
-      insights_count: 4,
-      status: 'completed'
-    },
-    {
-      id: '3',
-      name: 'inventory_report.csv',
-      uploaded_at: '2024-01-13T09:20:00Z',
-      insights_count: 0,
-      status: 'pending'
+  let stats = { totalProjects: 0, totalInsights: 0, totalCharts: 0, recentUploads: 0 };
+  let recentProjects: { id: string; name: string; uploaded_at: string; insights_count: number; status: string }[] = [];
+
+  if (process.env.POSTGRES_URL) {
+    try {
+      stats = await getDashboardStats(userId);
+      const files = await getFilesByUserId(userId);
+      recentProjects = files.slice(0, 5).map((f) => ({
+        id: f.id,
+        name: f.filename,
+        uploaded_at: f.createdAt.toISOString(),
+        insights_count: f.insightsCount ?? 0,
+        status: f.status,
+      }));
+    } catch {
+      // Fallback to defaults if DB unavailable
     }
-  ];
+  }
+
+  if (recentProjects.length === 0) {
+    recentProjects = [
+      { id: '1', name: 'Upload your first dataset', uploaded_at: new Date().toISOString(), insights_count: 0, status: 'pending' },
+    ];
+  }
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
-      minute: '2-digit'
+      minute: '2-digit',
     });
   };
 
@@ -69,7 +66,6 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="space-y-2">
         <h1 className="text-3xl font-bold">Welcome to DatRep</h1>
         <p className="text-muted-foreground">
@@ -77,7 +73,6 @@ export default function DashboardPage() {
         </p>
       </div>
 
-      {/* Quick Actions */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card className="hover:shadow-lg transition-shadow cursor-pointer">
           <Link href="/upload">
@@ -112,7 +107,7 @@ export default function DashboardPage() {
         </Card>
 
         <Card className="hover:shadow-lg transition-shadow cursor-pointer">
-          <Link href="#">
+          <Link href="/analytics">
             <CardContent className="p-6">
               <div className="flex items-center space-x-4">
                 <div className="p-2 bg-green-100 rounded-lg">
@@ -128,7 +123,7 @@ export default function DashboardPage() {
         </Card>
 
         <Card className="hover:shadow-lg transition-shadow cursor-pointer">
-          <Link href="#">
+          <Link href="/projects">
             <CardContent className="p-6">
               <div className="flex items-center space-x-4">
                 <div className="p-2 bg-purple-100 rounded-lg">
@@ -144,7 +139,6 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      {/* Stats Overview */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -153,9 +147,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.totalProjects}</div>
-            <p className="text-xs text-muted-foreground">
-              +2 from last month
-            </p>
+            <p className="text-xs text-muted-foreground">Your uploaded datasets</p>
           </CardContent>
         </Card>
 
@@ -166,9 +158,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.totalInsights}</div>
-            <p className="text-xs text-muted-foreground">
-              +12 from last month
-            </p>
+            <p className="text-xs text-muted-foreground">Generated across projects</p>
           </CardContent>
         </Card>
 
@@ -179,9 +169,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.totalCharts}</div>
-            <p className="text-xs text-muted-foreground">
-              +8 from last month
-            </p>
+            <p className="text-xs text-muted-foreground">Visualizations created</p>
           </CardContent>
         </Card>
 
@@ -192,14 +180,11 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.recentUploads}</div>
-            <p className="text-xs text-muted-foreground">
-              This week
-            </p>
+            <p className="text-xs text-muted-foreground">This week</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Recent Projects */}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -215,26 +200,25 @@ export default function DashboardPage() {
         <CardContent>
           <div className="space-y-4">
             {recentProjects.map((project) => (
-              <div key={project.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors">
+              <div
+                key={project.id}
+                className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors"
+              >
                 <div className="flex items-center space-x-4">
                   <FileText className="h-5 w-5 text-muted-foreground" />
                   <div>
                     <p className="font-medium">{project.name}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {formatDate(project.uploaded_at)}
-                    </p>
+                    <p className="text-sm text-muted-foreground">{formatDate(project.uploaded_at)}</p>
                   </div>
                 </div>
                 <div className="flex items-center space-x-4">
-                  <span className="text-sm text-muted-foreground">
-                    {project.insights_count} insights
-                  </span>
+                  <span className="text-sm text-muted-foreground">{project.insights_count} insights</span>
                   {getStatusBadge(project.status)}
-                  <Button size="sm" variant="outline" asChild>
-                    <Link href={`/view/${project.id}`}>
-                      View
-                    </Link>
-                  </Button>
+                  {project.id !== '1' && (
+                    <Button size="sm" variant="outline" asChild>
+                      <Link href={`/view/${project.id}`}>View</Link>
+                    </Button>
+                  )}
                 </div>
               </div>
             ))}
@@ -242,7 +226,6 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
 
-      {/* Features Highlight */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card>
           <CardHeader>

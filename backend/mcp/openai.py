@@ -1,20 +1,29 @@
 import os
 import json
+from datetime import datetime
 from typing import Dict, List, Optional
 from openai import OpenAI
 from fastapi import HTTPException
 import pandas as pd
 
 class OpenAIMCP:
-    """Model Context Protocol for OpenAI GPT integration"""
+    """Model Context Protocol for OpenAI/OpenRouter GPT integration"""
     
     def __init__(self):
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY environment variable is required")
+        openrouter_key = os.getenv("OPENROUTER_API_KEY")
+        openai_key = os.getenv("OPENAI_API_KEY")
         
-        self.client = OpenAI(api_key=api_key)
-        self.model = "gpt-4o-mini"  # Use GPT-4o-mini for better token efficiency
+        if openrouter_key:
+            self.client = OpenAI(
+                api_key=openrouter_key,
+                base_url="https://openrouter.ai/api/v1"
+            )
+            self.model = os.getenv("OPENROUTER_MODEL", "arcee-ai/trinity-large-preview:free")
+        elif openai_key:
+            self.client = OpenAI(api_key=openai_key)
+            self.model = "gpt-5-nano"
+        else:
+            raise ValueError("OPENROUTER_API_KEY or OPENAI_API_KEY environment variable is required")
     
     async def generate_insights(self, data_summary: Dict, sample_data: str, file_path: str = None) -> Dict:
         """
@@ -49,7 +58,7 @@ class OpenAIMCP:
             return {
                 "insights": insights,
                 "summary": data_summary,
-                "generated_at": "2024-01-01T00:00:00Z"  # TODO: Use actual timestamp
+                "generated_at": datetime.utcnow().isoformat() + "Z"
             }
             
         except Exception as e:
@@ -86,7 +95,7 @@ class OpenAIMCP:
             return {
                 "question": question,
                 "answer": response,
-                "timestamp": "2024-01-01T00:00:00Z"  # TODO: Use actual timestamp
+                "timestamp": datetime.utcnow().isoformat() + "Z"
             }
             
         except Exception as e:
@@ -104,32 +113,15 @@ class OpenAIMCP:
         categorical_cols = df.select_dtypes(include=['object', 'category']).columns
         
         if len(numeric_cols) > 0:
-            context_parts.append("📊 Numeric Columns Analysis:")
-            for col in numeric_cols[:5]:  # Limit to first 5 columns
+            context_parts.append("📊 Numeric Columns Analysis (use these EXACT numbers in insights):")
+            grand_total = df[numeric_cols].sum().sum()
+            for col in numeric_cols[:10]:  # Include more columns for revenue-type data
                 stats = df[col].describe()
-                # Find the actual highest and lowest values
+                col_sum = df[col].sum()
+                pct = (col_sum / grand_total * 100) if grand_total > 0 else 0
                 max_val = df[col].max()
                 min_val = df[col].min()
-                max_idx = df[col].idxmax()
-                min_idx = df[col].idxmin()
-                
-                # Get the corresponding row data for context
-                max_row = df.iloc[max_idx] if max_idx is not None else None
-                min_row = df.iloc[min_idx] if min_idx is not None else None
-                
-                context_parts.append(f"- {col}: mean={stats['mean']:.2f}, std={stats['std']:.2f}")
-                context_parts.append(f"  Highest: {max_val:.2f} (row {max_idx})")
-                context_parts.append(f"  Lowest: {min_val:.2f} (row {min_idx})")
-                
-                # Add context from other columns if available
-                if max_row is not None and len(categorical_cols) > 0:
-                    cat_col = categorical_cols[0]
-                    if cat_col in max_row:
-                        context_parts.append(f"  Max value context: {max_row[cat_col]}")
-                if min_row is not None and len(categorical_cols) > 0:
-                    cat_col = categorical_cols[0]
-                    if cat_col in min_row:
-                        context_parts.append(f"  Min value context: {min_row[cat_col]}")
+                context_parts.append(f"- {col}: sum={col_sum:,.2f} ({pct:.1f}% of total), mean={stats['mean']:.2f}, min={min_val:.2f}, max={max_val:.2f}")
         
         if len(categorical_cols) > 0:
             context_parts.append("🏷️ Categorical Columns Analysis:")
@@ -182,6 +174,17 @@ class OpenAIMCP:
         """Create context specific to the user's question"""
         question_lower = question.lower()
         context_parts = []
+
+        # ALWAYS add pre-computed column sums first - critical for "total X" questions
+        numeric_cols = df.select_dtypes(include=['number']).columns
+        if len(numeric_cols) > 0:
+            context_parts.append("PRE-COMPUTED COLUMN TOTALS (use these for 'total', 'sum', 'how much' - e.g. 'total sales' = Gross Sales or Net Sales sum):")
+            grand_total = df[numeric_cols].sum().sum()
+            for col in numeric_cols:
+                col_sum = df[col].sum()
+                pct = (col_sum / grand_total * 100) if grand_total > 0 else 0
+                context_parts.append(f'- "{col}": sum={col_sum:,.2f} ({pct:.1f}% of total)')
+            context_parts.append("")
         
         # Add relevant data based on question type
         if any(word in question_lower for word in ['trend', 'pattern', 'correlation']):
@@ -239,9 +242,11 @@ class OpenAIMCP:
                 median_val = df[col].median()
                 context_parts.append(f"- {col}: mean={mean_val:.2f}, median={median_val:.2f}")
         
-        # Add sample data with more context
-        context_parts.append("📋 Sample Data (first 3 rows):")
-        context_parts.append(df.head(3).to_string())
+        # Add full dataset (or up to 2000 rows for context limits)
+        max_rows = 2000
+        df_to_include = df if len(df) <= max_rows else df.head(max_rows)
+        context_parts.append(f"📋 Full Dataset ({len(df_to_include)} rows, total dataset has {len(df)} rows):")
+        context_parts.append(df_to_include.to_string())
         
         return "\n".join(context_parts)
     
@@ -249,6 +254,8 @@ class OpenAIMCP:
         """Create prompt for insight generation with actual data context"""
         prompt = f"""
 You are a brilliant and enthusiastic data analyst who loves discovering hidden patterns in data! 🎯
+
+CRITICAL: You MUST use ONLY the actual numbers from the Detailed Analysis and Sample Data below. NEVER use placeholders like $X, XX, Y%, $A, $B, XXXX. Every number in your insights MUST be real data.
 
 Your mission: Analyze this dataset and provide EXCITING, SPECIFIC insights that will blow the user's mind!
 
@@ -306,10 +313,12 @@ You are a brilliant, enthusiastic data analyst who loves helping people understa
 
 Your superpower: Making complex data insights fun and easy to understand!
 
-Dataset Context:
+Dataset Context (from the user's UPLOADED FILE - use ONLY these numbers):
 {data_context}
 
 User Question: {question}
+
+CRITICAL: For "total X", "sum of X", "how much" - use the PRE-COMPUTED COLUMN TOTALS above. Match the user's term to the closest column (e.g. "sales" → Gross Sales, Net Sales, Total Collected). Never say the data doesn't contain values if the column exists with a sum.
 
 Your mission: Provide a detailed, fun, and professional answer that:
 🎯 Directly addresses their question with SPECIFIC data insights
