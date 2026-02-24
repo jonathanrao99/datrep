@@ -8,12 +8,21 @@ from models.schemas import UploadResponse, ErrorResponse
 
 router = APIRouter()
 
-def validate_file_size(file: UploadFile) -> UploadFile:
-    """Validate file size"""
-    max_size = int(os.getenv("MAX_FILE_SIZE", 10485760))  # 10MB default
-    
-    # Note: This is a basic check. For production, you'd want to check actual file size
-    # after upload or use streaming uploads
+async def validate_file_size(file: UploadFile) -> UploadFile:
+    """Validate uploaded file size against MAX_FILE_SIZE."""
+    max_size = int(os.getenv("MAX_FILE_SIZE", 104857600))  # 100MB default
+
+    # Read once to check size, then rewind so downstream save can read again.
+    content = await file.read()
+    size = len(content)
+    await file.seek(0)
+
+    if size > max_size:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large: {size} bytes. Max allowed is {max_size} bytes",
+        )
+
     return file
 
 @router.post("/upload", response_model=UploadResponse)
@@ -37,7 +46,7 @@ async def upload_file(
             raise HTTPException(status_code=400, detail="No file provided")
         
         # Validate file size (basic check)
-        validate_file_size(file)
+        await validate_file_size(file)
         
         # Save file using File System MCP
         file_info = await file_system.save_uploaded_file(file)

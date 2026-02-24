@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Body
+from fastapi import APIRouter, HTTPException, Body, Depends
 from typing import Optional
 import pandas as pd
 
@@ -6,8 +6,9 @@ from mcp.file_system import file_system
 from mcp.openai import openai_mcp
 from services.data_service import data_service
 from models.schemas import ChartRequest, ChartResponse, ChatRequest, ChatResponse, ErrorResponse, ChartType
+from api.auth import require_api_token
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_api_token)])
 
 @router.post("/chart", response_model=ChartResponse)
 async def generate_chart(request: ChartRequest):

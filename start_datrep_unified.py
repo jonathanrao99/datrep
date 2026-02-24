@@ -34,11 +34,11 @@ class DatRepLauncher:
             print("❌ Error: package.json not found. Please run this script from the DatRep root directory.")
             sys.exit(1)
         
-        # Set OpenAI API key if not already set
+        # Require OpenAI API key from environment/.env (never hardcode secrets)
         if not os.getenv("OPENAI_API_KEY"):
-            api_key = "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"
-            os.environ["OPENAI_API_KEY"] = api_key
-            print("✅ OpenAI API key set")
+            print("❌ OPENAI_API_KEY is not set.")
+            print("💡 Add OPENAI_API_KEY to backend/.env or your shell environment.")
+            sys.exit(1)
         
         # Set backend URL
         os.environ["BACKEND_URL"] = "http://localhost:8000"

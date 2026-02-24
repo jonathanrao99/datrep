@@ -46,9 +46,10 @@ app.include_router(insights.router, prefix="/api", tags=["insights"])
 # Global exception handler
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
+    # Avoid leaking internal exception details to clients.
     return JSONResponse(
         status_code=500,
-        content={"detail": "Internal server error", "error": str(exc)}
+        content={"detail": "Internal server error"}
     )
 
 if __name__ == "__main__":
