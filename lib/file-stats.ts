@@ -29,7 +29,7 @@ export async function parseBufferForPreview(
       content = buffer.toString('latin1');
     }
     try {
-      const parsed = parse(content, csvOpts) as Record<string, unknown>[];
+      const parsed = parse(content, csvOpts) as unknown as Record<string, unknown>[];
       rows = parsed;
       columns = parsed.length > 0 ? Object.keys(parsed[0]) : [];
     } catch {
