@@ -75,7 +75,7 @@ export async function GET(
 
     // Run standalone first when file exists locally (uploads are now saved locally, not to backend)
     const localFilePath = await findFilePath(fileId);
-    let data: { insights?: unknown; data_summary?: unknown; file_info?: { original_filename?: string } };
+    let data: { insights?: unknown; data_summary?: unknown; file_info?: { original_filename?: string } } | undefined;
 
     if (localFilePath && process.env.OPENROUTER_API_KEY) {
       const standaloneResult = await analyzeFileStandalone(fileId);
@@ -147,6 +147,13 @@ export async function GET(
           }
         }
       }
+    }
+
+    if (!data) {
+      return NextResponse.json(
+        { error: 'Analysis not found', details: 'Could not load analysis from standalone or backend' },
+        { status: 404 }
+      );
     }
 
     const responseData = data as { insights?: { insights?: unknown[]; key_findings?: string[]; recommendations?: string[]; generated_at?: string }; data_summary?: Record<string, unknown>; file_info?: { original_filename?: string }; charts?: unknown[] };
