@@ -1,12 +1,13 @@
 import os
-from fastapi import FastAPI, HTTPException
+from pathlib import Path
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 import uvicorn
 
-# Load environment variables
-load_dotenv()
+# Single source of env: repo root .env only (no backend/.env needed)
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 # Import routes
 from api.routes import upload, analyze, insights

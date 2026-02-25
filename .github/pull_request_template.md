@@ -7,7 +7,7 @@
 - [ ] Relevant manual checks completed
 
 ## Security checklist
-- [ ] I reviewed `SECURITY_CHECKLIST.md`
+- [ ] I reviewed [docs/SECURITY.md](../docs/SECURITY.md)
 - [ ] No secrets or private data were added
 - [ ] Upload/API changes include validation and safe error handling
 

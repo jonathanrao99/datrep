@@ -31,6 +31,9 @@ yarn-error.log*
 .env
 .cursor
 
+# uploads (local dev; Vercel uses Blob)
+/uploads/
+
 # python/backend artifacts
 backend/uploads/
 backend/__pycache__/

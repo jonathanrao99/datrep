@@ -12,7 +12,7 @@
   <span> · </span>
   <a href="#features">Features</a>
   <span> · </span>
-  <a href="OVERVIEW.md">Full Documentation</a>
+  <a href="docs/SECURITY.md">Security</a>
 </div>
 
 ---
@@ -49,24 +49,20 @@ DatRep is a modern, AI-powered data analysis platform that transforms how you in
    pip install -r backend/requirements.txt
    ```
 
-2. **Set up environment**:
+2. **Set up environment** (single file for frontend + backend):
    ```bash
-   # Copy environment files
    cp .env.example .env
-   cp backend/.env.example backend/.env
-   
-   # Add your OpenAI API key to backend/.env
-   OPENAI_API_KEY=your_openai_api_key_here
-
-   # Optional hardening (recommended)
-   API_AUTH_TOKEN=your_long_random_token
-   RATE_LIMIT_PER_MINUTE=30
+   # Edit .env and add OPENROUTER_API_KEY or OPENAI_API_KEY, AUTH_SECRET, etc.
    ```
 
 3. **Start the application**:
    ```bash
-   # Use the unified launcher (recommended)
-   python start_datrep_unified.py
+   # Option A: one command (starts backend + frontend)
+   python scripts/start-dev.py
+
+   # Option B: two terminals
+   # Terminal 1: cd backend && python -m uvicorn main:app --host 0.0.0.0 --port 8000
+   # Terminal 2: npm run dev
    ```
 
 4. **Access the application**:
@@ -112,18 +108,18 @@ Frontend (Next.js) ←→ Backend (FastAPI) ←→ OpenAI API
   TypeScript        AI Analysis Engine
 ```
 
----
-
-## 📚 **Documentation**
-
-For comprehensive documentation, including:
-- Detailed setup instructions
-- API documentation
-- Development guidelines
-- Architecture details
-- Future roadmap
-
-**📖 [Read the Full Documentation](OVERVIEW.md)**
+### **Repo structure**
+```
+datrep/
+├── app/              # Next.js app (pages, API routes)
+├── components/       # UI components (custom + ui)
+├── lib/              # Shared logic (auth, db, upload, analyze)
+├── backend/          # FastAPI (api/, services/, mcp/)
+├── scripts/          # start-dev.py, start-dev.bat
+├── docs/             # SECURITY.md
+├── .env.example      # Single env template (frontend + backend)
+└── package.json
+```
 
 ---
 
@@ -147,7 +143,7 @@ For comprehensive documentation, including:
 
 ## 🤝 **Contributing**
 
-We welcome contributions! Please see our [Contributing Guidelines](OVERVIEW.md#contributing) in the full documentation.
+We welcome contributions. Review [docs/SECURITY.md](docs/SECURITY.md) before submitting.
 
 ---
 
