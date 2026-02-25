@@ -24,6 +24,8 @@ export const files = pgTable('files', {
   fileSize: integer('file_size').notNull(),
   fileType: text('file_type').notNull(),
   blobUrl: text('blob_url'),
+  /** Base64 file content when using Postgres storage (no Blob). Max ~5MB recommended. */
+  fileDataBase64: text('file_data_base64'),
   status: fileStatusEnum('status').notNull().default('pending'),
   insightsCount: integer('insights_count').default(0),
   chartsCount: integer('charts_count').default(0),
@@ -53,6 +55,7 @@ export async function createFile(data: {
   fileSize: number;
   fileType: string;
   blobUrl?: string;
+  fileDataBase64?: string;
 }) {
   if (!db) return;
   await db.insert(files).values({
@@ -62,6 +65,7 @@ export async function createFile(data: {
     fileSize: data.fileSize,
     fileType: data.fileType,
     blobUrl: data.blobUrl ?? null,
+    fileDataBase64: data.fileDataBase64 ?? null,
     status: 'pending',
   });
 }

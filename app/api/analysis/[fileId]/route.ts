@@ -75,8 +75,8 @@ export async function GET(
 
     // Run standalone when file is available (local disk or Vercel Blob)
     const localFilePath = await findFilePath(fileId);
-    const blobFile = process.env.POSTGRES_URL ? await getFileById(fileId) : null;
-    const hasFile = !!localFilePath || !!blobFile?.blobUrl;
+    const dbFile = process.env.POSTGRES_URL ? await getFileById(fileId) : null;
+    const hasFile = !!localFilePath || !!dbFile?.blobUrl || !!dbFile?.fileDataBase64;
     let data: { insights?: unknown; data_summary?: unknown; file_info?: { original_filename?: string } } | undefined;
 
     if (hasFile && process.env.OPENROUTER_API_KEY) {

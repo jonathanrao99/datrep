@@ -6,10 +6,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { LoadingSpinner } from '@/components/custom/loading-spinner'
-import { DataTable } from '@/components/custom/data-table'
-import { ChartRenderer } from '@/components/custom/chart-renderer'
-import { ChatInterface } from '@/components/custom/chat-interface'
+import { LoadingSpinner } from '@/components/loading-spinner'
+import { DataTable } from '@/components/data-table'
+import { ChartRenderer } from '@/components/chart-renderer'
+import { ChatInterface } from '@/components/chat-interface'
 import { 
   FileText, 
   BarChart3, 

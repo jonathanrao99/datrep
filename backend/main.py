@@ -10,7 +10,7 @@ import uvicorn
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 # Import routes
-from api.routes import upload, analyze, insights
+from routes import upload, analyze, insights
 
 # Create FastAPI app
 app = FastAPI(

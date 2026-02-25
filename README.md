@@ -112,9 +112,9 @@ Frontend (Next.js) ←→ Backend (FastAPI) ←→ OpenAI API
 ```
 datrep/
 ├── app/              # Next.js app (pages, API routes)
-├── components/       # UI components (custom + ui)
+├── components/       # UI (file-uploader, data-table, chart-renderer, chat-interface, ui/)
 ├── lib/              # Shared logic (auth, db, upload, analyze)
-├── backend/          # FastAPI (api/, services/, mcp/)
+├── backend/          # FastAPI (routes/, services/, mcp/, models/)
 ├── scripts/          # start-dev.py, start-dev.bat
 ├── docs/             # SECURITY.md
 ├── .env.example      # Single env template (frontend + backend)

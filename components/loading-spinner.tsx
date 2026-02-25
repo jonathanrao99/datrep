@@ -32,4 +32,4 @@ export function LoadingOverlay({ text = 'Loading...' }: { text?: string }) {
       <LoadingSpinner size="lg" text={text} />
     </div>
   )
-} 
+}

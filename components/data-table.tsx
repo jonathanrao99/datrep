@@ -15,15 +15,15 @@ interface DataTableProps {
   onExport?: () => void
 }
 
-export function DataTable({ 
-  data, 
-  title = "Data Preview", 
+export function DataTable({
+  data,
+  title = "Data Preview",
   maxRows = 10,
   showPagination = true,
-  onExport 
+  onExport
 }: DataTableProps) {
   const [currentPage, setCurrentPage] = useState(1)
-  
+
   if (!data.length) {
     return (
       <Card className="border-0 shadow-sm">
@@ -60,7 +60,7 @@ export function DataTable({
   const getColumnType = (columnName: string) => {
     const sampleValues = data.slice(0, 100).map(row => row[columnName]).filter(v => v !== null && v !== undefined)
     if (sampleValues.length === 0) return 'unknown'
-    
+
     const firstValue = sampleValues[0]
     if (typeof firstValue === 'number') return 'numeric'
     if (typeof firstValue === 'boolean') return 'boolean'
@@ -120,7 +120,7 @@ export function DataTable({
             </TableBody>
           </Table>
         </div>
-        
+
         {showPagination && totalPages > 1 && (
           <div className="flex items-center justify-between mt-4 pt-4 border-t border-slate-200">
             <div className="text-sm text-slate-600">

@@ -20,6 +20,8 @@ export async function saveUploadLocally(formData: FormData): Promise<{
     file_type: string;
     uploaded_at: string;
     blob_url?: string;
+    /** Set when stored in Postgres (free, no Blob). Upload route must pass to createFile. */
+    file_data_base64?: string;
   };
 }> {
   const file = formData.get('file') as File | null;
@@ -41,7 +43,39 @@ export async function saveUploadLocally(formData: FormData): Promise<{
   const fileId = randomUUID();
   const safeFilename = `${fileId}_${path.basename(filename)}`;
 
-  // Vercel (and other serverless) have read-only filesystem — use Blob when token is set
+  const isServerless = !!(
+    process.env.VERCEL ||
+    process.env.AWS_LAMBDA_FUNCTION_NAME
+  );
+
+  // Free option: store in Postgres (no Blob needed). Max 5MB per file.
+  const MAX_POSTGRES_FILE_BYTES = 5 * 1024 * 1024;
+  if (
+    isServerless &&
+    !process.env.BLOB_READ_WRITE_TOKEN &&
+    process.env.POSTGRES_URL &&
+    buffer.length <= MAX_POSTGRES_FILE_BYTES
+  ) {
+    return {
+      file_id: fileId,
+      file_info: {
+        file_id: fileId,
+        original_filename: filename,
+        stored_filename: safeFilename,
+        file_path: '',
+        file_size: buffer.length,
+        file_type: ext,
+        uploaded_at: new Date().toISOString(),
+        file_data_base64: buffer.toString('base64'),
+      },
+    };
+  }
+
+  if (isServerless && !process.env.BLOB_READ_WRITE_TOKEN) {
+    throw new Error(
+      'Uploads on Vercel need either: (1) Add Blob (Storage → Blob), or (2) set POSTGRES_URL and keep files under 5MB to store in DB for free.'
+    );
+  }
   if (process.env.BLOB_READ_WRITE_TOKEN) {
     const blob = await put(safeFilename, buffer, {
       access: 'public',
@@ -96,6 +130,11 @@ export async function getFileBuffer(
     return { buffer, filename };
   }
   const row = await getFileById(fileId);
+  if (row?.fileDataBase64) {
+    const buffer = Buffer.from(row.fileDataBase64, 'base64');
+    const filename = row.filename?.endsWith(row.fileType) ? row.filename : `${row.filename || 'dataset'}${row.fileType}`;
+    return { buffer, filename };
+  }
   if (row?.blobUrl) {
     const res = await fetch(row.blobUrl);
     if (!res.ok) return null;

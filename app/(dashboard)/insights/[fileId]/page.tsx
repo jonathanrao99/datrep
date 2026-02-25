@@ -5,8 +5,8 @@ import { useParams, useRouter } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { LoadingSpinner } from '@/components/custom/loading-spinner'
-import { ChatInterface } from '@/components/custom/chat-interface'
+import { LoadingSpinner } from '@/components/loading-spinner'
+import { ChatInterface } from '@/components/chat-interface'
 import { 
   Brain, 
   Download, 

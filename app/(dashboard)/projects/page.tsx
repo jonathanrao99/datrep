@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { LoadingSpinner } from '@/components/custom/loading-spinner';
+import { LoadingSpinner } from '@/components/loading-spinner';
 import { FileText, Calendar, BarChart3, Eye, Download, Trash2, Search } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 

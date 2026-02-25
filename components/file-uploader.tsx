@@ -13,12 +13,12 @@ interface FileUploaderProps {
   className?: string
 }
 
-export function FileUploader({ 
-  onDrop, 
-  onError, 
+export function FileUploader({
+  onDrop,
+  onError,
   maxSize = 100 * 1024 * 1024, // 100MB default
   acceptedTypes = ['.csv', '.xlsx', '.xls'],
-  className 
+  className
 }: FileUploaderProps) {
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'success' | 'error'>('idle')
   const [errorMessage, setErrorMessage] = useState<string>('')
@@ -27,12 +27,12 @@ export function FileUploader({
     onDrop: (acceptedFiles, rejectedFiles) => {
       if (rejectedFiles.length > 0) {
         const error = rejectedFiles[0].errors[0]
-        const message = error.code === 'file-too-large' 
+        const message = error.code === 'file-too-large'
           ? 'File is too large. Maximum size is 100MB.'
           : error.code === 'file-invalid-type'
-          ? 'Invalid file type. Please upload CSV or Excel files.'
-          : 'File upload failed. Please try again.'
-        
+            ? 'Invalid file type. Please upload CSV or Excel files.'
+            : 'File upload failed. Please try again.'
+
         setErrorMessage(message)
         setUploadStatus('error')
         onError?.(message)
@@ -98,10 +98,10 @@ export function FileUploader({
         )}
       >
         <input {...getInputProps()} />
-        
+
         <div className="space-y-4">
           {getStatusIcon()}
-          
+
           <div className="space-y-2">
             <p className={cn(
               'text-sm font-medium',
@@ -111,7 +111,7 @@ export function FileUploader({
             )}>
               {getStatusText()}
             </p>
-            
+
             <p className="text-xs text-slate-500">
               {getAcceptedTypesText()}
             </p>
