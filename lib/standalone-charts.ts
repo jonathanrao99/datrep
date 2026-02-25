@@ -1,8 +1,7 @@
-import { readFile } from 'fs/promises';
 import path from 'path';
 import { parse } from 'csv-parse/sync';
 import * as XLSX from 'xlsx';
-import { findFilePath } from './standalone-upload';
+import { getFileBuffer } from './standalone-upload';
 
 export interface ChartDefinition {
   id: string;
@@ -13,15 +12,15 @@ export interface ChartDefinition {
 }
 
 export async function generateChartsForFile(fileId: string): Promise<ChartDefinition[]> {
-  const filePath = await findFilePath(fileId);
-  if (!filePath) return [];
+  const fileSource = await getFileBuffer(fileId);
+  if (!fileSource) return [];
 
-  const ext = path.extname(filePath).toLowerCase();
+  const ext = path.extname(fileSource.filename).toLowerCase();
   let rows: Record<string, unknown>[] = [];
   let columns: string[] = [];
 
   if (ext === '.csv') {
-    const content = await readFile(filePath, 'utf-8');
+    const content = fileSource.buffer.toString('utf-8');
     const parsed = parse(content, {
       columns: true,
       skip_empty_lines: true,
@@ -31,8 +30,7 @@ export async function generateChartsForFile(fileId: string): Promise<ChartDefini
     rows = parsed;
     columns = parsed.length > 0 ? Object.keys(parsed[0]) : [];
   } else if (ext === '.xlsx' || ext === '.xls') {
-    const buffer = await readFile(filePath);
-    const workbook = XLSX.read(buffer, { type: 'buffer' });
+    const workbook = XLSX.read(fileSource.buffer, { type: 'buffer' });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     const data = XLSX.utils.sheet_to_json(sheet) as Record<string, unknown>[];
     rows = data;

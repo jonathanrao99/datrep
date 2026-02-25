@@ -1,5 +1,5 @@
-import { findFilePath } from './standalone-upload';
-import { parseFileWithStats } from './file-stats';
+import { getFileBuffer } from './standalone-upload';
+import { parseFileWithStatsFromBuffer } from './file-stats';
 
 const OPENROUTER_API = 'https://openrouter.ai/api/v1/chat/completions';
 const MODEL = 'arcee-ai/trinity-large-preview:free';
@@ -24,8 +24,8 @@ function formatStatsForChat(stats: Record<string, { sum?: number; min?: number; 
   return lines.join('\n');
 }
 
-async function getDataContext(filePath: string): Promise<string> {
-  const { rows, columns, stats } = await parseFileWithStats(filePath);
+async function getDataContext(buffer: Buffer, filename: string): Promise<string> {
+  const { rows, columns, stats } = await parseFileWithStatsFromBuffer(buffer, filename);
 
   const statsBlock = formatStatsForChat(stats);
   const useFullDataset = rows.length <= MAX_ROWS_FOR_FULL_CONTEXT;
@@ -72,13 +72,13 @@ export async function chatWithDataStandalone(
     return { success: false, message: 'OPENROUTER_API_KEY is required for chat' };
   }
 
-  const filePath = await findFilePath(fileId);
-  if (!filePath) {
+  const fileSource = await getFileBuffer(fileId);
+  if (!fileSource) {
     return { success: false, message: 'File not found. Please ensure the analysis has been completed.' };
   }
 
   try {
-    const dataContext = await getDataContext(filePath);
+    const dataContext = await getDataContext(fileSource.buffer, fileSource.filename);
 
     const response = await fetch(OPENROUTER_API, {
       method: 'POST',

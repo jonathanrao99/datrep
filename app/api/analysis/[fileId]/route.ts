@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAnalysisByFileId, saveAnalysis, updateFileStatus } from '@/lib/db';
+import { getAnalysisByFileId, getFileById, saveAnalysis, updateFileStatus } from '@/lib/db';
 import { normalizeInsightsForDisplay } from '@/lib/normalize-insights';
 import { analyzeFileStandalone } from '@/lib/standalone-analyze';
 import { generateChartsForFile } from '@/lib/standalone-charts';
@@ -73,11 +73,13 @@ export async function GET(
       });
     }
 
-    // Run standalone first when file exists locally (uploads are now saved locally, not to backend)
+    // Run standalone when file is available (local disk or Vercel Blob)
     const localFilePath = await findFilePath(fileId);
+    const blobFile = process.env.POSTGRES_URL ? await getFileById(fileId) : null;
+    const hasFile = !!localFilePath || !!blobFile?.blobUrl;
     let data: { insights?: unknown; data_summary?: unknown; file_info?: { original_filename?: string } } | undefined;
 
-    if (localFilePath && process.env.OPENROUTER_API_KEY) {
+    if (hasFile && process.env.OPENROUTER_API_KEY) {
       const standaloneResult = await analyzeFileStandalone(fileId);
       if (standaloneResult.success && standaloneResult.data_summary) {
         const insights = standaloneResult.insights as { insights?: unknown[]; key_findings?: string[]; recommendations?: string[] };

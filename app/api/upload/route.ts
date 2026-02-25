@@ -88,12 +88,14 @@ export async function POST(request: NextRequest) {
       try {
         const session = await auth();
         const userId = session?.user?.id ?? session?.user?.email ?? undefined;
+        const blobUrl = fileInfo.blob_url as string | undefined;
         await createFile({
           id: fileId,
           userId,
           filename: String(fileInfo.original_filename ?? 'dataset'),
           fileSize: Number(fileInfo.file_size ?? 0),
           fileType: String(fileInfo.file_type ?? '.csv'),
+          ...(blobUrl && { blobUrl }),
         });
       } catch (dbError) {
         console.error('DB save error (file still uploaded):', dbError);

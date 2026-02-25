@@ -151,3 +151,49 @@ export async function parseFileWithStats(filePath: string): Promise<{
   const stats = computeStatistics(rows, columns, dataTypes);
   return { rows, columns, dataTypes, stats };
 }
+
+/** Parse file from buffer (e.g. from Vercel Blob). Use when file is not on local disk. */
+export async function parseFileWithStatsFromBuffer(
+  buffer: Buffer,
+  filename: string
+): Promise<{
+  rows: Record<string, unknown>[];
+  columns: string[];
+  dataTypes: Record<string, string>;
+  stats: Record<string, ColumnStats>;
+}> {
+  const ext = path.extname(filename).toLowerCase();
+  let rows: Record<string, unknown>[] = [];
+  let columns: string[] = [];
+
+  if (ext === '.csv') {
+    const content = buffer.toString('utf-8');
+    const parsed = parse(content, {
+      columns: true,
+      skip_empty_lines: true,
+      relax_column_count: true,
+      relax_quotes: true,
+    }) as Record<string, unknown>[];
+    rows = parsed;
+    columns = parsed.length > 0 ? Object.keys(parsed[0]) : [];
+  } else if (ext === '.xlsx' || ext === '.xls') {
+    const workbook = XLSX.read(buffer, { type: 'buffer' });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const data = XLSX.utils.sheet_to_json(sheet) as Record<string, unknown>[];
+    rows = data;
+    columns = data.length > 0 ? Object.keys(data[0]) : [];
+  } else {
+    throw new Error(`Unsupported format: ${ext}`);
+  }
+
+  const dataTypes: Record<string, string> = {};
+  for (const col of columns) {
+    const values = rows.map((r) => r[col]).filter((v) => v != null && v !== '');
+    const sample = values[0];
+    const isNum = typeof sample === 'number' || (typeof sample === 'string' && !Number.isNaN(parseFloat(sample)));
+    dataTypes[col] = isNum ? 'number' : 'string';
+  }
+
+  const stats = computeStatistics(rows, columns, dataTypes);
+  return { rows, columns, dataTypes, stats };
+}

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { findFilePath } from '@/lib/standalone-upload';
-import { readFile } from 'fs/promises';
+import { getFileBuffer } from '@/lib/standalone-upload';
 import path from 'path';
 import { parse } from 'csv-parse/sync';
 import * as XLSX from 'xlsx';
@@ -17,16 +16,16 @@ export async function GET(
       return NextResponse.json({ error: 'File ID is required' }, { status: 400 });
     }
 
-    const filePath = await findFilePath(fileId);
-    if (!filePath) {
+    const fileSource = await getFileBuffer(fileId);
+    if (!fileSource) {
       return NextResponse.json({ error: 'File not found' }, { status: 404 });
     }
 
-    const ext = path.extname(filePath).toLowerCase();
+    const ext = path.extname(fileSource.filename).toLowerCase();
     let rows: Record<string, unknown>[] = [];
 
     if (ext === '.csv') {
-      const content = await readFile(filePath, 'utf-8');
+      const content = fileSource.buffer.toString('utf-8');
       const parsed = parse(content, {
         columns: true,
         skip_empty_lines: true,
@@ -35,8 +34,7 @@ export async function GET(
       }) as Record<string, unknown>[];
       rows = parsed;
     } else if (ext === '.xlsx' || ext === '.xls') {
-      const buffer = await readFile(filePath);
-      const workbook = XLSX.read(buffer, { type: 'buffer' });
+      const workbook = XLSX.read(fileSource.buffer, { type: 'buffer' });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       rows = XLSX.utils.sheet_to_json(sheet) as Record<string, unknown>[];
     } else {

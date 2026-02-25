@@ -1,8 +1,7 @@
-import { readFile } from 'fs/promises';
 import path from 'path';
 import { parse } from 'csv-parse/sync';
 import * as XLSX from 'xlsx';
-import { findFilePath } from './standalone-upload';
+import { getFileBuffer } from './standalone-upload';
 
 const OPENROUTER_API = 'https://openrouter.ai/api/v1/chat/completions';
 const MODEL = 'arcee-ai/trinity-large-preview:free';
@@ -74,13 +73,15 @@ function computeStatistics(
   return stats;
 }
 
-async function parseFile(filePath: string): Promise<{ data_summary: DataSummary; sample_data: string; computed_stats: Record<string, ColumnStats> }> {
-  const ext = path.extname(filePath).toLowerCase();
+async function parseFileFromBuffer(
+  buffer: Buffer,
+  filename: string
+): Promise<{ data_summary: DataSummary; sample_data: string; computed_stats: Record<string, ColumnStats> }> {
+  const ext = path.extname(filename).toLowerCase();
   let rows: Record<string, unknown>[] = [];
   let columns: string[] = [];
 
   if (ext === '.csv') {
-    const buffer = await readFile(filePath);
     const content = buffer.toString('utf-8');
     const parsed = parse(content, {
       columns: true,
@@ -93,7 +94,6 @@ async function parseFile(filePath: string): Promise<{ data_summary: DataSummary;
     rows = parsed;
     columns = parsed.length > 0 ? Object.keys(parsed[0]) : [];
   } else if (ext === '.xlsx' || ext === '.xls') {
-    const buffer = await readFile(filePath);
     const workbook = XLSX.read(buffer, { type: 'buffer' });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     const data = XLSX.utils.sheet_to_json(sheet) as Record<string, unknown>[];
@@ -280,13 +280,16 @@ export async function analyzeFileStandalone(fileId: string): Promise<{
     return { success: false, message: 'OPENROUTER_API_KEY is required for standalone analysis' };
   }
 
-  const filePath = await findFilePath(fileId);
-  if (!filePath) {
+  const fileSource = await getFileBuffer(fileId);
+  if (!fileSource) {
     return { success: false, message: 'File not found' };
   }
 
   try {
-    const { data_summary, sample_data, computed_stats } = await parseFile(filePath);
+    const { data_summary, sample_data, computed_stats } = await parseFileFromBuffer(
+      fileSource.buffer,
+      fileSource.filename
+    );
     const prompt = buildInsightsPrompt(data_summary, sample_data, computed_stats);
 
     const response = await fetch(OPENROUTER_API, {
