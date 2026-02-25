@@ -4,6 +4,11 @@ import { getDashboardStats, getFilesByUserId } from '@/lib/db';
 import { BarChart3, FileText, Brain, Activity, TrendingUp } from 'lucide-react';
 import Link from 'next/link';
 
+export const metadata = {
+  title: 'Analytics',
+  description: 'View analytics across your datasets, insights count, and project status.',
+};
+
 export default async function AnalyticsPage() {
   const session = await auth();
   const userId = session?.user?.id ?? session?.user?.email ?? undefined;

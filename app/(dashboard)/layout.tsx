@@ -2,13 +2,17 @@ import Link from 'next/link';
 import {
   Home,
   Database,
-  Package2,
   PanelLeft,
   Settings,
   Upload,
   FolderOpen,
   BarChart3
 } from 'lucide-react';
+
+export const metadata = {
+  title: { default: 'Dashboard', template: '%s | DatRep' },
+  description: 'Manage your datasets, view AI insights, and explore analytics.',
+};
 
 import {
   Breadcrumb,

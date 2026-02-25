@@ -2,10 +2,40 @@ import './globals.css';
 
 import { Analytics } from '@vercel/analytics/next';
 
+const siteUrl =
+  process.env.NEXT_PUBLIC_APP_URL?.startsWith('http')
+    ? process.env.NEXT_PUBLIC_APP_URL
+    : process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : 'https://datrep.vercel.app';
+
 export const metadata = {
-  title: 'Next.js App Router + NextAuth + Tailwind CSS',
+  metadataBase: new URL(siteUrl),
+  title: {
+    default: 'DatRep — AI-Powered Data Analysis',
+    template: '%s | DatRep',
+  },
   description:
-    'A user admin dashboard configured with Next.js, Postgres, NextAuth, Tailwind CSS, TypeScript, and Prettier.'
+    'Upload CSV or Excel files and get instant AI-generated insights, charts, and data quality analysis. DatRep turns your data into actionable reports.',
+  keywords: ['data analysis', 'AI insights', 'CSV', 'Excel', 'analytics', 'data visualization', 'business intelligence'],
+  authors: [{ name: 'DatRep' }],
+  openGraph: {
+    type: 'website',
+    locale: 'en_US',
+    url: siteUrl,
+    siteName: 'DatRep',
+    title: 'DatRep — AI-Powered Data Analysis',
+    description: 'Upload CSV or Excel files and get instant AI-generated insights, charts, and data quality analysis.',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'DatRep — AI-Powered Data Analysis',
+    description: 'Upload CSV or Excel files and get instant AI-generated insights, charts, and data quality analysis.',
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
 };
 
 export default function RootLayout({

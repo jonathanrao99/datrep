@@ -15,6 +15,11 @@ import Link from 'next/link';
 import { auth } from '@/lib/auth';
 import { getDashboardStats, getFilesByUserId } from '@/lib/db';
 
+export const metadata = {
+  title: 'Dashboard',
+  description: 'Overview of your datasets, insights, and analytics. Upload files and view AI-generated reports.',
+};
+
 export default async function DashboardPage() {
   const session = await auth();
   const userId = session?.user?.id ?? session?.user?.email ?? undefined;
