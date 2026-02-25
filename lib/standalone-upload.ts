@@ -2,7 +2,7 @@ import { writeFile, mkdir, readdir, readFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
-import { put } from '@vercel/blob';
+import { put, get } from '@vercel/blob';
 import { getFileById } from '@/lib/db';
 
 const UPLOAD_DIR = path.join(process.cwd(), 'uploads');
@@ -78,7 +78,7 @@ export async function saveUploadLocally(formData: FormData): Promise<{
   }
   if (process.env.BLOB_READ_WRITE_TOKEN) {
     const blob = await put(safeFilename, buffer, {
-      access: 'public',
+      access: 'private',
       addRandomSuffix: false,
     });
     return {
@@ -136,11 +136,16 @@ export async function getFileBuffer(
     return { buffer, filename };
   }
   if (row?.blobUrl) {
-    const res = await fetch(row.blobUrl);
-    if (!res.ok) return null;
-    const ab = await res.arrayBuffer();
-    const filename = row.filename?.endsWith(row.fileType) ? row.filename : `${row.filename || 'dataset'}${row.fileType}`;
-    return { buffer: Buffer.from(ab), filename };
+    try {
+      const pathname = new URL(row.blobUrl).pathname.replace(/^\//, '');
+      const result = await get(pathname, { access: 'private' });
+      const stream = (result as { stream: ReadableStream }).stream;
+      const ab = await new Response(stream).arrayBuffer();
+      const filename = row.filename?.endsWith(row.fileType) ? row.filename : `${row.filename || 'dataset'}${row.fileType}`;
+      return { buffer: Buffer.from(ab), filename };
+    } catch {
+      return null;
+    }
   }
   return null;
 }
