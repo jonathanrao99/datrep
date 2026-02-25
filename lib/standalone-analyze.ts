@@ -1,7 +1,7 @@
 import path from 'path';
 import { parse } from 'csv-parse/sync';
 import * as XLSX from 'xlsx';
-import { getFileBuffer } from './standalone-upload';
+import { getFileBuffer, getFileBufferFromBlobPathname } from './standalone-upload';
 
 const OPENROUTER_API = 'https://openrouter.ai/api/v1/chat/completions';
 const MODEL = 'arcee-ai/trinity-large-preview:free';
@@ -267,7 +267,12 @@ function parseInsightsResponse(response: string): { insights: unknown[]; key_fin
   };
 }
 
-export async function analyzeFileStandalone(fileId: string): Promise<{
+export type StandaloneBlobInfo = { blobPathname: string; filename: string };
+
+export async function analyzeFileStandalone(
+  fileId: string,
+  blobInfo?: StandaloneBlobInfo
+): Promise<{
   success: boolean;
   analysis_id?: string;
   data_summary?: DataSummary;
@@ -280,7 +285,10 @@ export async function analyzeFileStandalone(fileId: string): Promise<{
     return { success: false, message: 'OPENROUTER_API_KEY is required for standalone analysis' };
   }
 
-  const fileSource = await getFileBuffer(fileId);
+  const fileSource =
+    blobInfo?.blobPathname && blobInfo?.filename
+      ? await getFileBufferFromBlobPathname(blobInfo.blobPathname, blobInfo.filename)
+      : await getFileBuffer(fileId);
   if (!fileSource) {
     return { success: false, message: 'File not found' };
   }

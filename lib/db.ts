@@ -24,6 +24,8 @@ export const files = pgTable('files', {
   fileSize: integer('file_size').notNull(),
   fileType: text('file_type').notNull(),
   blobUrl: text('blob_url'),
+  /** Pathname for private Blob get() — same as key passed to put(). */
+  blobPathname: text('blob_pathname'),
   /** Base64 file content when using Postgres storage (no Blob). Max ~5MB recommended. */
   fileDataBase64: text('file_data_base64'),
   status: fileStatusEnum('status').notNull().default('pending'),
@@ -55,6 +57,7 @@ export async function createFile(data: {
   fileSize: number;
   fileType: string;
   blobUrl?: string;
+  blobPathname?: string;
   fileDataBase64?: string;
 }) {
   if (!db) return;
@@ -65,6 +68,7 @@ export async function createFile(data: {
     fileSize: data.fileSize,
     fileType: data.fileType,
     blobUrl: data.blobUrl ?? null,
+    blobPathname: data.blobPathname ?? null,
     fileDataBase64: data.fileDataBase64 ?? null,
     status: 'pending',
   });

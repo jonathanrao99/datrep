@@ -89,6 +89,7 @@ export async function POST(request: NextRequest) {
         const session = await auth();
         const userId = session?.user?.id ?? session?.user?.email ?? undefined;
         const blobUrl = fileInfo.blob_url as string | undefined;
+        const blobPathname = fileInfo.blob_pathname as string | undefined;
         const fileDataBase64 = fileInfo.file_data_base64 as string | undefined;
         await createFile({
           id: fileId,
@@ -97,6 +98,7 @@ export async function POST(request: NextRequest) {
           fileSize: Number(fileInfo.file_size ?? 0),
           fileType: String(fileInfo.file_type ?? '.csv'),
           ...(blobUrl && { blobUrl }),
+          ...(blobPathname && { blobPathname }),
           ...(fileDataBase64 && { fileDataBase64 }),
         });
       } catch (dbError) {
@@ -104,13 +106,16 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const filename = String(fileInfo.original_filename ?? 'dataset');
     return NextResponse.json({
       file_id: fileId,
-      filename: fileInfo.original_filename ?? 'dataset',
+      filename,
       size: fileInfo.file_size ?? 0,
       columns,
       preview,
       uploaded_at: fileInfo.uploaded_at,
+      ...(fileInfo.blob_pathname && { blob_pathname: fileInfo.blob_pathname }),
+      ...(fileInfo.blob_url && { blob_url: fileInfo.blob_url }),
     });
   } catch (error) {
     console.error('Upload error:', error);

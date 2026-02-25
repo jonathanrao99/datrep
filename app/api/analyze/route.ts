@@ -10,6 +10,12 @@ export async function POST(request: NextRequest) {
     const backendUrl = process.env.BACKEND_URL || 'http://localhost:8000';
     const body = await request.json();
     const fileId = body?.file_id;
+    const blobPathname = body?.blob_pathname as string | undefined;
+    const filename = body?.filename as string | undefined;
+    const blobInfo =
+      blobPathname && filename
+        ? { blobPathname, filename }
+        : undefined;
 
     if (!fileId) {
       return NextResponse.json({ error: 'file_id is required' }, { status: 400 });
@@ -29,7 +35,7 @@ export async function POST(request: NextRequest) {
       } else {
         const error = await response.text();
         if (response.status >= 500 && process.env.OPENROUTER_API_KEY) {
-          const standaloneResult = await analyzeFileStandalone(fileId);
+          const standaloneResult = await analyzeFileStandalone(fileId, blobInfo);
           if (standaloneResult.success) {
             data = standaloneResult;
           } else {
@@ -53,7 +59,7 @@ export async function POST(request: NextRequest) {
       if (!isConnectionError && !isFetchFailed) {
         throw fetchErr;
       }
-      const standaloneResult = await analyzeFileStandalone(fileId);
+      const standaloneResult = await analyzeFileStandalone(fileId, blobInfo);
       if (!standaloneResult.success) {
         console.error('Standalone analysis failed:', standaloneResult.message);
         return NextResponse.json(

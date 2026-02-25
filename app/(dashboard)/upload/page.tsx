@@ -18,6 +18,8 @@ interface UploadResponse {
   columns: string[]
   preview: any[]
   uploaded_at: string
+  blob_pathname?: string
+  blob_url?: string
 }
 
 interface AnalysisResponse {
@@ -98,7 +100,11 @@ export default function UploadPage() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          file_id: uploadResponse.file_id
+          file_id: uploadResponse.file_id,
+          ...(uploadResponse.blob_pathname && uploadResponse.filename && {
+            blob_pathname: uploadResponse.blob_pathname,
+            filename: uploadResponse.filename,
+          }),
         }),
       })
       

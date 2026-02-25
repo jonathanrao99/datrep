@@ -20,6 +20,8 @@ export async function saveUploadLocally(formData: FormData): Promise<{
     file_type: string;
     uploaded_at: string;
     blob_url?: string;
+    /** Pathname for Blob get() — pass to createFile when using Blob. */
+    blob_pathname?: string;
     /** Set when stored in Postgres (free, no Blob). Upload route must pass to createFile. */
     file_data_base64?: string;
   };
@@ -92,6 +94,7 @@ export async function saveUploadLocally(formData: FormData): Promise<{
         file_type: ext,
         uploaded_at: new Date().toISOString(),
         blob_url: blob.url,
+        blob_pathname: safeFilename,
       },
     };
   }
@@ -137,7 +140,7 @@ export async function getFileBuffer(
   }
   if (row?.blobUrl) {
     try {
-      const pathname = new URL(row.blobUrl).pathname.replace(/^\//, '');
+      const pathname = row.blobPathname ?? new URL(row.blobUrl).pathname.replace(/^\//, '');
       const result = await get(pathname, { access: 'private' });
       const stream = (result as { stream: ReadableStream }).stream;
       const ab = await new Response(stream).arrayBuffer();
@@ -148,6 +151,22 @@ export async function getFileBuffer(
     }
   }
   return null;
+}
+
+/** Get file buffer from Vercel Blob by pathname (no DB required). Use when client sends blob_pathname from upload. */
+export async function getFileBufferFromBlobPathname(
+  pathname: string,
+  filename: string
+): Promise<{ buffer: Buffer; filename: string } | null> {
+  if (!process.env.BLOB_READ_WRITE_TOKEN) return null;
+  try {
+    const result = await get(pathname, { access: 'private' });
+    const stream = (result as { stream: ReadableStream }).stream;
+    const ab = await new Response(stream).arrayBuffer();
+    return { buffer: Buffer.from(ab), filename: filename || 'dataset.csv' };
+  } catch {
+    return null;
+  }
 }
 
 const BACKEND_UPLOAD_DIR = path.join(process.cwd(), 'backend', 'uploads');
