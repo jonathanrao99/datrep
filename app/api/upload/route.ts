@@ -107,6 +107,8 @@ export async function POST(request: NextRequest) {
     }
 
     const filename = String(fileInfo.original_filename ?? 'dataset');
+    const blobPathname = fileInfo.blob_pathname as string | undefined;
+    const blobUrl = fileInfo.blob_url as string | undefined;
     return NextResponse.json({
       file_id: fileId,
       filename,
@@ -114,8 +116,8 @@ export async function POST(request: NextRequest) {
       columns,
       preview,
       uploaded_at: fileInfo.uploaded_at,
-      ...(fileInfo.blob_pathname && { blob_pathname: fileInfo.blob_pathname }),
-      ...(fileInfo.blob_url && { blob_url: fileInfo.blob_url }),
+      ...(blobPathname ? { blob_pathname: blobPathname } : {}),
+      ...(blobUrl ? { blob_url: blobUrl } : {}),
     });
   } catch (error) {
     console.error('Upload error:', error);
