@@ -116,15 +116,23 @@ export default function UploadPage() {
       const data: AnalysisResponse = await response.json()
       console.log('Analysis completed successfully:', data)
       
-      // Redirect to insights page
-      console.log('Redirecting to insights page:', `/insights/${uploadResponse.file_id}`)
-      
+      // Redirect to insights page, including Blob info when available (DB-free mode)
+      const query =
+        uploadResponse.blob_pathname && uploadResponse.filename
+          ? `?blob_pathname=${encodeURIComponent(uploadResponse.blob_pathname)}&filename=${encodeURIComponent(
+              uploadResponse.filename
+            )}`
+          : ''
+
+      const targetUrl = `/insights/${uploadResponse.file_id}${query}`
+      console.log('Redirecting to insights page:', targetUrl)
+
       // Try multiple redirect methods
       try {
-        router.push(`/insights/${uploadResponse.file_id}`)
+        router.push(targetUrl)
       } catch (redirectError) {
         console.error('Router push failed, trying window.location:', redirectError)
-        window.location.href = `/insights/${uploadResponse.file_id}`
+        window.location.href = targetUrl
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Analysis failed')

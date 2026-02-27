@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -43,7 +43,10 @@ interface AnalysisResponse {
 export default function InsightsPage() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const fileId = params.fileId as string
+  const blobPathname = searchParams.get('blob_pathname')
+  const filename = searchParams.get('filename')
   
   const [analysisResponse, setAnalysisResponse] = useState<AnalysisResponse | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -56,32 +59,75 @@ export default function InsightsPage() {
     if (fileId) {
       loadAnalysis()
     }
-  }, [fileId])
+  }, [fileId, blobPathname, filename])
 
   const loadAnalysis = async () => {
     try {
       setIsLoading(true)
       setError(null)
-      
+
+      // DB-free path: when blob info is available, call /api/analyze which
+      // reads directly from Vercel Blob using blob_pathname + filename.
+      if (blobPathname && filename) {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? ''}/api/analyze`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            file_id: fileId,
+            blob_pathname: blobPathname,
+            filename,
+          }),
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}))
+          throw new Error(errorData.details || errorData.detail || errorData.error || 'Analysis failed')
+        }
+
+        const raw: any = await response.json()
+        const insightsObj = raw.insights ?? {}
+        const insightsArray = Array.isArray(insightsObj.insights)
+          ? insightsObj.insights
+          : Array.isArray(raw.insights)
+          ? raw.insights
+          : []
+        const dataSummary = (raw.data_summary as Record<string, unknown>) ?? {}
+
+        const mapped: AnalysisResponse = {
+          file_id: fileId,
+          statistics: (dataSummary as any).statistics ?? {},
+          missing_values: (dataSummary as any).missing_values ?? {},
+          data_types: (dataSummary as any).data_types ?? {},
+          insights: Array.isArray(insightsArray) ? insightsArray : [],
+          analyzed_at: (raw.generated_at as string) ?? new Date().toISOString(),
+        }
+
+        setAnalysisResponse(mapped)
+        return
+      }
+
+      // Fallback: legacy behavior using /api/analysis (requires Postgres or backend)
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? ''}/api/analysis/${fileId}`)
-      
+
       if (!response.ok) {
         throw new Error('Analysis not found')
       }
-      
+
       const data: AnalysisResponse = await response.json()
-      
+
       // Validate the data structure
       if (!data || typeof data !== 'object') {
         throw new Error('Invalid analysis data')
       }
-      
+
       // Ensure insights is an array (API normalizes JSON-in-description already)
       if (!Array.isArray(data.insights)) {
         console.warn('Insights is not an array:', data.insights)
         data.insights = []
       }
-      
+
       setAnalysisResponse(data)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load analysis')
