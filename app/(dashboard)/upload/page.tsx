@@ -36,6 +36,10 @@ export default function UploadPage() {
   const [uploadResponse, setUploadResponse] = useState<UploadResponse | null>(null)
   const [isUploading, setIsUploading] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const [isSummarizing, setIsSummarizing] = useState(false)
+  const [aiSummary, setAiSummary] = useState<string | null>(null)
+  const [aiSuggestedQuestions, setAiSuggestedQuestions] = useState<string[]>([])
+  const [aiQualityRisks, setAiQualityRisks] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
   const router = useRouter()
 
@@ -50,6 +54,9 @@ export default function UploadPage() {
 
     setIsUploading(true)
     setError(null)
+    setAiSummary(null)
+    setAiSuggestedQuestions([])
+    setAiQualityRisks([])
 
     try {
       // Parse file in browser first - guarantees we have columns/preview regardless of server
@@ -147,6 +154,45 @@ export default function UploadPage() {
     const sizes = ['Bytes', 'KB', 'MB', 'GB']
     const i = Math.floor(Math.log(bytes) / Math.log(k))
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+  }
+
+  const handleQuickAiSummary = async () => {
+    if (!uploadResponse) return
+    setIsSummarizing(true)
+    setError(null)
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? ''}/api/upload/describe`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          columns: uploadResponse.columns,
+          preview: uploadResponse.preview,
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(
+          errorData.details || errorData.detail || errorData.error || 'Failed to generate AI summary'
+        )
+      }
+
+      const data = (await response.json()) as {
+        summary: string
+        suggested_questions: string[]
+        data_quality_risks: string[]
+      }
+
+      setAiSummary(data.summary)
+      setAiSuggestedQuestions(Array.isArray(data.suggested_questions) ? data.suggested_questions : [])
+      setAiQualityRisks(Array.isArray(data.data_quality_risks) ? data.data_quality_risks : [])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to generate AI summary')
+    } finally {
+      setIsSummarizing(false)
+    }
   }
 
   return (
@@ -252,7 +298,7 @@ export default function UploadPage() {
 
             {/* Data Preview */}
             {uploadResponse.preview && uploadResponse.preview.length > 0 && (
-              <div className="space-y-3">
+              <div className="space-y-4">
                 <div className="flex items-center gap-2">
                   <Eye className="h-4 w-4 text-slate-600" />
                   <h4 className="text-sm font-medium text-slate-700">Data Preview</h4>
@@ -263,11 +309,77 @@ export default function UploadPage() {
                 <div className="border border-slate-200 rounded-lg overflow-hidden">
                   <DataTable data={uploadResponse.preview} />
                 </div>
+
+                {/* AI quick summary of the uploaded dataset */}
+                <div className="mt-4 grid grid-cols-1 md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-4 items-stretch">
+                  <Button
+                    onClick={handleQuickAiSummary}
+                    disabled={isSummarizing}
+                    variant="outline"
+                    className="w-full justify-center md:h-full md:items-center md:justify-start"
+                  >
+                    {isSummarizing ? (
+                      <LoadingSpinner size="sm" text="Asking AI about your data..." />
+                    ) : (
+                      <>
+                        <Brain className="h-4 w-4 mr-2 text-indigo-600" />
+                        Let AI summarize this dataset
+                      </>
+                    )}
+                  </Button>
+
+                  {aiSummary && (
+                    <div className="p-4 rounded-lg border border-indigo-100 bg-indigo-50/60 space-y-3">
+                      <div className="flex items-center gap-2">
+                        <Brain className="h-4 w-4 text-indigo-600" />
+                        <p className="text-xs font-semibold tracking-wide text-indigo-700 uppercase">
+                          AI quick take on your dataset
+                        </p>
+                      </div>
+                      <p className="text-sm text-slate-800 leading-relaxed">{aiSummary}</p>
+
+                      {(aiSuggestedQuestions.length > 0 || aiQualityRisks.length > 0) && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
+                          {aiSuggestedQuestions.length > 0 && (
+                            <div className="space-y-1.5">
+                              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                                Questions you could explore
+                              </p>
+                              <ul className="space-y-1.5">
+                                {aiSuggestedQuestions.slice(0, 4).map((q, idx) => (
+                                  <li key={idx} className="text-xs text-slate-800 flex gap-1.5">
+                                    <span className="mt-[3px] h-1.5 w-1.5 rounded-full bg-indigo-500 flex-shrink-0" />
+                                    <span>{q}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {aiQualityRisks.length > 0 && (
+                            <div className="space-y-1.5">
+                              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                                Data quality watchouts
+                              </p>
+                              <ul className="space-y-1.5">
+                                {aiQualityRisks.slice(0, 4).map((q, idx) => (
+                                  <li key={idx} className="text-xs text-slate-800 flex gap-1.5">
+                                    <span className="mt-[3px] h-1.5 w-1.5 rounded-full bg-amber-500 flex-shrink-0" />
+                                    <span>{q}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
-            <Button 
-              onClick={handleAnalyze} 
+            <Button
+              onClick={handleAnalyze}
               disabled={isAnalyzing}
               className="w-full"
             >
