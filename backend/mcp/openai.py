@@ -411,5 +411,17 @@ Keep it under 400 words unless they specifically ask for more detail.
                 "recommendations": []
             }
 
-# Global OpenAI instance
-openai_mcp = OpenAIMCP() 
+_mcp_instance: Optional[OpenAIMCP] = None
+
+
+class _LazyOpenAIMCP:
+    """Defer client setup until first use so importing the app works without API keys (e.g. CI)."""
+
+    def __getattr__(self, name: str):
+        global _mcp_instance
+        if _mcp_instance is None:
+            _mcp_instance = OpenAIMCP()
+        return getattr(_mcp_instance, name)
+
+
+openai_mcp = _LazyOpenAIMCP()
