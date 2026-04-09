@@ -252,6 +252,10 @@ class OpenAIMCP:
     
     def _create_insights_prompt(self, data_summary: Dict, sample_data: str, actual_data_context: str = "") -> str:
         """Create prompt for insight generation with actual data context"""
+        newline = "\n"
+        detailed_block = (
+            f"🎯 Detailed Analysis:{newline}{actual_data_context}" if actual_data_context else ""
+        )
         prompt = f"""
 You are a brilliant and enthusiastic data analyst who loves discovering hidden patterns in data! 🎯
 
@@ -268,7 +272,7 @@ Dataset Summary:
 Sample Data:
 {sample_data}
 
-{f"🎯 Detailed Analysis:\n{actual_data_context}" if actual_data_context else ""}
+{detailed_block}
 
 Now, let's dive deep! Provide 6-8 AMAZING insights about THIS specific dataset. Be:
 ✨ SPECIFIC - Use actual numbers, names, and exact values from the data
