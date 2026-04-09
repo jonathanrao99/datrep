@@ -9,7 +9,7 @@ import { FileUploader } from '@/components/file-uploader'
 import { DataTable } from '@/components/data-table'
 import { LoadingSpinner } from '@/components/loading-spinner'
 import { parseFileInBrowser } from '@/lib/client-file-parser'
-import { Upload, FileText, Brain, Database, Clock, AlertCircle, BarChart3, Eye } from 'lucide-react'
+import { Upload, FileText, Brain, Database, AlertCircle, BarChart3 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
 interface UploadResponse {
@@ -263,7 +263,7 @@ export default function UploadPage() {
   }
 
   return (
-    <div className="p-6 space-y-8 max-w-4xl mx-auto">
+    <div className="w-full max-w-[min(100%,92rem)] mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-8">
       {/* Header */}
       <div className="space-y-2">
         <h1 className="text-2xl font-semibold text-slate-900">Upload Dataset</h1>
@@ -366,16 +366,7 @@ export default function UploadPage() {
             {/* Data Preview */}
             {uploadResponse.preview && uploadResponse.preview.length > 0 && (
               <div className="space-y-4">
-                <div className="flex items-center gap-2">
-                  <Eye className="h-4 w-4 text-slate-600" />
-                  <h4 className="text-sm font-medium text-slate-700">Data Preview</h4>
-                  <Badge variant="outline" className="bg-slate-50 text-slate-700">
-                    {uploadResponse.preview.length} rows
-                  </Badge>
-                </div>
-                <div className="border border-slate-200 rounded-lg overflow-hidden">
-                  <DataTable data={uploadResponse.preview} />
-                </div>
+                <DataTable data={uploadResponse.preview} embedded showRowNumbers title="Data Preview" />
 
                 {/* AI quick summary of the uploaded dataset */}
                 <div className="mt-4 grid grid-cols-1 md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-4 items-stretch">
