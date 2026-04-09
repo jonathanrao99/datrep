@@ -6,4 +6,7 @@ pydantic
 aiofiles
 python-dotenv
 httpx
-typing-extensions 
+typing-extensions
+pandas
+numpy
+openpyxl
