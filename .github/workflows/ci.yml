@@ -46,7 +46,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Static compile check
-        run: python -m py_compile main.py api/auth.py api/routes/upload.py api/routes/analyze.py api/routes/insights.py
+        run: python -m compileall -q .
 
       - name: Backend import smoke test
         run: python -c "import main; print('backend import ok')"

@@ -9,7 +9,7 @@ import { FileUploader } from '@/components/file-uploader'
 import { DataTable } from '@/components/data-table'
 import { LoadingSpinner } from '@/components/loading-spinner'
 import { parseFileInBrowser } from '@/lib/client-file-parser'
-import { Upload, FileText, Brain, Database, AlertCircle, BarChart3 } from 'lucide-react'
+import { Upload, FileText, Brain, Database, AlertCircle, BarChart3, Sparkles, Loader2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
 interface UploadResponse {
@@ -263,7 +263,7 @@ export default function UploadPage() {
   }
 
   return (
-    <div className="w-full max-w-[min(100%,92rem)] mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-8">
+    <div className="mx-auto w-full min-w-0 max-w-[min(100%,92rem)] space-y-8 px-4 py-6 sm:px-6 lg:px-8">
       {/* Header */}
       <div className="space-y-2">
         <h1 className="text-2xl font-semibold text-slate-900">Upload Dataset</h1>
@@ -368,67 +368,95 @@ export default function UploadPage() {
               <div className="space-y-4">
                 <DataTable data={uploadResponse.preview} embedded showRowNumbers title="Data Preview" />
 
-                {/* AI quick summary of the uploaded dataset */}
-                <div className="mt-4 grid grid-cols-1 md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-4 items-stretch">
-                  <Button
-                    onClick={handleQuickAiSummary}
-                    disabled={isSummarizing}
-                    variant="outline"
-                    className="w-full justify-center md:h-full md:items-center md:justify-start"
-                  >
-                    {isSummarizing ? (
-                      <LoadingSpinner size="sm" text="Asking AI about your data..." />
-                    ) : (
-                      <>
-                        <Brain className="h-4 w-4 mr-2 text-indigo-600" />
-                        Let AI summarize this dataset
-                      </>
-                    )}
-                  </Button>
-
-                  {aiSummary && (
-                    <div className="p-4 rounded-lg border border-indigo-100 bg-indigo-50/60 space-y-3">
-                      <div className="flex items-center gap-2">
-                        <Brain className="h-4 w-4 text-indigo-600" />
-                        <p className="text-xs font-semibold tracking-wide text-indigo-700 uppercase">
-                          AI quick take on your dataset
+                {/* AI quick summary — single card, vertical flow */}
+                <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200/90 bg-gradient-to-b from-white via-slate-50/40 to-slate-50/80 shadow-sm ring-1 ring-slate-900/[0.04]">
+                  <div className="flex flex-col gap-5 border-b border-slate-200/80 bg-white/90 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:gap-6 md:px-6">
+                    <div className="flex min-w-0 gap-4">
+                      <div
+                        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-md shadow-indigo-500/25"
+                        aria-hidden
+                      >
+                        <Brain className="h-6 w-6" />
+                      </div>
+                      <div className="min-w-0 space-y-1">
+                        <h3 className="text-base font-semibold tracking-tight text-slate-900">
+                          AI dataset overview
+                        </h3>
+                        <p className="text-sm leading-relaxed text-slate-600">
+                          Get a short read of what you uploaded, angles to analyze, and quick quality notes—before
+                          running full insights.
                         </p>
                       </div>
-                      <p className="text-sm text-slate-800 leading-relaxed">{aiSummary}</p>
+                    </div>
+                    <Button
+                      onClick={handleQuickAiSummary}
+                      disabled={isSummarizing}
+                      className="h-11 shrink-0 rounded-xl bg-indigo-600 px-5 text-sm font-medium shadow-sm hover:bg-indigo-700 sm:w-auto w-full"
+                    >
+                      {isSummarizing ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />
+                          Generating…
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="mr-2 h-4 w-4 opacity-90" aria-hidden />
+                          {aiSummary ? 'Regenerate overview' : 'Generate overview'}
+                        </>
+                      )}
+                    </Button>
+                  </div>
 
-                      {(aiSuggestedQuestions.length > 0 || aiQualityRisks.length > 0) && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
-                          {aiSuggestedQuestions.length > 0 && (
-                            <div className="space-y-1.5">
-                              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                                Questions you could explore
-                              </p>
-                              <ul className="space-y-1.5">
-                                {aiSuggestedQuestions.slice(0, 4).map((q, idx) => (
-                                  <li key={idx} className="text-xs text-slate-800 flex gap-1.5">
-                                    <span className="mt-[3px] h-1.5 w-1.5 rounded-full bg-indigo-500 flex-shrink-0" />
-                                    <span>{q}</span>
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                          {aiQualityRisks.length > 0 && (
-                            <div className="space-y-1.5">
-                              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                                Data quality watchouts
-                              </p>
-                              <ul className="space-y-1.5">
-                                {aiQualityRisks.slice(0, 4).map((q, idx) => (
-                                  <li key={idx} className="text-xs text-slate-800 flex gap-1.5">
-                                    <span className="mt-[3px] h-1.5 w-1.5 rounded-full bg-amber-500 flex-shrink-0" />
-                                    <span>{q}</span>
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
+                  {(isSummarizing || aiSummary) && (
+                    <div className="px-5 py-5 md:px-6 md:py-6">
+                      {isSummarizing && !aiSummary ? (
+                        <div className="flex min-h-[120px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-slate-200 bg-white/60 py-10">
+                          <LoadingSpinner size="md" text="Reading your columns and sample rows…" />
                         </div>
+                      ) : (
+                        aiSummary && (
+                          <div className="space-y-6">
+                            <div className="rounded-xl border border-indigo-100/90 bg-indigo-50/35 px-4 py-4 md:px-5 md:py-5">
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-indigo-700/90">
+                                Summary
+                              </p>
+                              <p className="mt-2 text-[15px] leading-relaxed text-slate-800">{aiSummary}</p>
+                            </div>
+
+                            {(aiSuggestedQuestions.length > 0 || aiQualityRisks.length > 0) && (
+                              <div className="grid gap-4 md:grid-cols-2">
+                                {aiSuggestedQuestions.length > 0 && (
+                                  <div className="rounded-xl border border-indigo-200/60 bg-white p-4 shadow-sm md:p-5">
+                                    <p className="text-sm font-semibold text-slate-900">Questions to explore</p>
+                                    <p className="mt-0.5 text-xs text-slate-500">Good starting points for deeper analysis</p>
+                                    <ul className="mt-4 space-y-3">
+                                      {aiSuggestedQuestions.slice(0, 6).map((q, idx) => (
+                                        <li key={idx} className="flex gap-3 text-sm leading-snug text-slate-700">
+                                          <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-500 ring-4 ring-indigo-500/15" />
+                                          <span>{q}</span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
+                                {aiQualityRisks.length > 0 && (
+                                  <div className="rounded-xl border border-amber-200/70 bg-amber-50/40 p-4 shadow-sm md:p-5">
+                                    <p className="text-sm font-semibold text-amber-950">Data quality watchouts</p>
+                                    <p className="mt-0.5 text-xs text-amber-900/70">Worth a second look before you trust every number</p>
+                                    <ul className="mt-4 space-y-3">
+                                      {aiQualityRisks.slice(0, 6).map((q, idx) => (
+                                        <li key={idx} className="flex gap-3 text-sm leading-snug text-amber-950/90">
+                                          <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500 ring-4 ring-amber-500/20" />
+                                          <span>{q}</span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )
                       )}
                     </div>
                   )}

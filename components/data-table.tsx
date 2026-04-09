@@ -106,12 +106,13 @@ export function DataTable({
   const tableBlock = (
     <div
       className={cn(
-        'rounded-lg border border-slate-200 bg-white shadow-sm',
+        'max-w-full min-w-0 rounded-lg border border-slate-200 bg-white shadow-sm',
         embedded && 'shadow-none'
       )}
     >
-      {/* Table wraps in one overflow-auto div — avoid nesting a second scroller */}
-      <Table className="w-max min-w-full">
+      {/* min-w-0 lets the flex/grid parent shrink so wide tables scroll inside instead of blowing out the viewport */}
+      <div className="min-w-0 max-w-full">
+        <Table className="w-max min-w-full">
           <TableHeader>
             <TableRow className="border-0 hover:bg-transparent">
               {showRowNumbers && (
@@ -167,6 +168,7 @@ export function DataTable({
             ))}
           </TableBody>
         </Table>
+      </div>
 
       {showPagination && totalPages > 1 && (
         <div className="flex items-center justify-between border-t border-slate-200 px-3 py-2">
