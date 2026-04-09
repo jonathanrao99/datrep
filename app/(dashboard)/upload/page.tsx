@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { upload as blobClientUpload } from '@vercel/blob/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -20,6 +21,21 @@ interface UploadResponse {
   uploaded_at: string
   blob_pathname?: string
   blob_url?: string
+}
+
+/** Vercel serverless request bodies are ~4.5MB max; larger files go browser → Blob. */
+const LARGE_UPLOAD_BYTES = 4 * 1024 * 1024
+
+function safeBasename(name: string): string {
+  const base = name.replace(/^.*[/\\]/, '')
+  return base || 'dataset.csv'
+}
+
+function extFromFilename(name: string): string {
+  const lower = name.toLowerCase()
+  if (lower.endsWith('.xlsx')) return '.xlsx'
+  if (lower.endsWith('.xls')) return '.xls'
+  return '.csv'
 }
 
 interface AnalysisResponse {
@@ -59,32 +75,83 @@ export default function UploadPage() {
     setAiQualityRisks([])
 
     try {
+      const apiBase = process.env.NEXT_PUBLIC_API_URL ?? ''
       // Parse file in browser first - guarantees we have columns/preview regardless of server
       const clientParsed = await parseFileInBrowser(file)
 
-      const formData = new FormData()
-      formData.append('file', file)
-      formData.append('columns', JSON.stringify(clientParsed.columns))
-      formData.append('preview', JSON.stringify(clientParsed.preview))
+      if (file.size > LARGE_UPLOAD_BYTES) {
+        const capRes = await fetch(`${apiBase}/api/blob/capabilities`)
+        const cap = (await capRes.json().catch(() => ({}))) as { clientUpload?: boolean }
 
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? ''}/api/upload`, {
-        method: 'POST',
-        body: formData,
-      })
+        if (!cap.clientUpload) {
+          throw new Error(
+            'Files over 4 MB cannot be sent through the server on Vercel. Add a Blob store to this project in the Vercel dashboard (sets BLOB_READ_WRITE_TOKEN), redeploy, then try again. For local dev without Blob, use a smaller file or run `vercel env pull`.'
+          )
+        }
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.detail || errorData.error || 'Upload failed')
+        const fileId = crypto.randomUUID()
+        const safeName = safeBasename(file.name)
+        const pathname = `${fileId}_${safeName}`
+
+        const blobResult = await blobClientUpload(pathname, file, {
+          access: 'private',
+          handleUploadUrl: `${apiBase}/api/blob/client-upload`,
+          multipart: true,
+        })
+
+        const uploadedAt = new Date().toISOString()
+        const registerRes = await fetch(`${apiBase}/api/upload/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            file_id: fileId,
+            blob_url: blobResult.url,
+            blob_pathname: blobResult.pathname,
+            filename: file.name,
+            size: file.size,
+            file_type: extFromFilename(safeName),
+            columns: clientParsed.columns,
+            preview: clientParsed.preview,
+            uploaded_at: uploadedAt,
+          }),
+        })
+
+        if (!registerRes.ok) {
+          const errJson = await registerRes.json().catch(() => ({}))
+          throw new Error(errJson.error || errJson.detail || 'Failed to register upload')
+        }
+
+        const data: UploadResponse = await registerRes.json()
+        const finalData: UploadResponse = {
+          ...data,
+          columns: (data.columns?.length ?? 0) > 0 ? data.columns : clientParsed.columns,
+          preview: (data.preview?.length ?? 0) > 0 ? data.preview : clientParsed.preview,
+        }
+        setUploadResponse(finalData)
+      } else {
+        const formData = new FormData()
+        formData.append('file', file)
+        formData.append('columns', JSON.stringify(clientParsed.columns))
+        formData.append('preview', JSON.stringify(clientParsed.preview))
+
+        const response = await fetch(`${apiBase}/api/upload`, {
+          method: 'POST',
+          body: formData,
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}))
+          throw new Error(errorData.detail || errorData.error || 'Upload failed')
+        }
+
+        const data: UploadResponse = await response.json()
+        const finalData: UploadResponse = {
+          ...data,
+          columns: (data.columns?.length ?? 0) > 0 ? data.columns : clientParsed.columns,
+          preview: (data.preview?.length ?? 0) > 0 ? data.preview : clientParsed.preview,
+        }
+        setUploadResponse(finalData)
       }
-
-      const data: UploadResponse = await response.json()
-      // Use client-parsed data if server returned empty (fallback)
-      const finalData: UploadResponse = {
-        ...data,
-        columns: (data.columns?.length ?? 0) > 0 ? data.columns : clientParsed.columns,
-        preview: (data.preview?.length ?? 0) > 0 ? data.preview : clientParsed.preview,
-      }
-      setUploadResponse(finalData)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed')
     } finally {
