@@ -5,6 +5,44 @@ import { analyzeFileStandalone } from '@/lib/standalone-analyze';
 export const runtime = 'nodejs';
 export const maxDuration = 300;
 
+const BACKEND_FETCH_MS = 10_000;
+
+type AnalyzePayload = {
+  success: boolean;
+  insights?: unknown;
+  data_summary?: unknown;
+  analysis_id?: string;
+  message?: string;
+};
+
+async function fetchFromFastAPI(
+  backendUrl: string,
+  fileId: string
+): Promise<{ ok: true; data: AnalyzePayload } | { ok: false; status: number; body: string }> {
+  const response = await fetch(`${backendUrl}/api/analyze`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ file_id: fileId }),
+    signal: AbortSignal.timeout(BACKEND_FETCH_MS),
+  });
+  if (response.ok) {
+    const data = (await response.json()) as AnalyzePayload;
+    return { ok: true, data };
+  }
+  const body = await response.text();
+  return { ok: false, status: response.status, body };
+}
+
+function isBackendUnreachable(err: unknown): boolean {
+  if (err instanceof Error) {
+    if (err.name === 'AbortError' || err.name === 'TimeoutError') return true;
+    if (err.message?.includes('fetch failed')) return true;
+    const cause = (err as { cause?: { code?: string } }).cause;
+    if (cause?.code === 'ECONNREFUSED' || cause?.code === 'ECONNRESET') return true;
+  }
+  return false;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const backendUrl = process.env.BACKEND_URL || 'http://localhost:8000';
@@ -21,20 +59,45 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'file_id is required' }, { status: 400 });
     }
 
-    let data: { success: boolean; insights?: unknown; data_summary?: unknown; analysis_id?: string };
+    let data: AnalyzePayload;
 
-    try {
-      const response = await fetch(`${backendUrl}/api/analyze`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ file_id: fileId }),
-      });
+    const openRouterConfigured = Boolean(process.env.OPENROUTER_API_KEY);
 
-      if (response.ok) {
-        data = await response.json();
+    // Blob-backed uploads: avoid waiting on BACKEND_URL (often unset or slow on Vercel).
+    if (openRouterConfigured && blobInfo) {
+      const standalone = await analyzeFileStandalone(fileId, blobInfo);
+      if (standalone.success) {
+        data = standalone;
       } else {
-        const error = await response.text();
-        if (response.status >= 500 && process.env.OPENROUTER_API_KEY) {
+        try {
+          const backend = await fetchFromFastAPI(backendUrl, fileId);
+          if (backend.ok) {
+            data = backend.data;
+          } else if (backend.status >= 500) {
+            return NextResponse.json(
+              { error: 'Analysis failed', details: standalone.message },
+              { status: 500 }
+            );
+          } else {
+            return NextResponse.json(
+              { error: 'Analysis failed', details: backend.body },
+              { status: backend.status }
+            );
+          }
+        } catch (e) {
+          if (!isBackendUnreachable(e)) throw e;
+          return NextResponse.json(
+            { error: 'Analysis failed', details: standalone.message },
+            { status: 500 }
+          );
+        }
+      }
+    } else {
+      try {
+        const backend = await fetchFromFastAPI(backendUrl, fileId);
+        if (backend.ok) {
+          data = backend.data;
+        } else if (backend.status >= 500 && openRouterConfigured) {
           const standaloneResult = await analyzeFileStandalone(fileId, blobInfo);
           if (standaloneResult.success) {
             data = standaloneResult;
@@ -47,27 +110,30 @@ export async function POST(request: NextRequest) {
           }
         } else {
           return NextResponse.json(
-            { error: 'Analysis failed', details: error },
-            { status: response.status }
+            { error: 'Analysis failed', details: backend.body },
+            { status: backend.status }
           );
         }
+      } catch (fetchErr: unknown) {
+        if (!isBackendUnreachable(fetchErr)) {
+          throw fetchErr;
+        }
+        if (!openRouterConfigured) {
+          return NextResponse.json(
+            { error: 'Analysis failed', details: 'Backend unreachable and OPENROUTER_API_KEY is not set' },
+            { status: 503 }
+          );
+        }
+        const standaloneResult = await analyzeFileStandalone(fileId, blobInfo);
+        if (!standaloneResult.success) {
+          console.error('Standalone analysis failed:', standaloneResult.message);
+          return NextResponse.json(
+            { error: 'Analysis failed', details: standaloneResult.message },
+            { status: 500 }
+          );
+        }
+        data = standaloneResult;
       }
-    } catch (fetchErr: unknown) {
-      const cause = (fetchErr as { cause?: { code?: string } })?.cause;
-      const isConnectionError = cause?.code === 'ECONNREFUSED' || cause?.code === 'ECONNRESET';
-      const isFetchFailed = fetchErr instanceof Error && fetchErr.message?.includes('fetch failed');
-      if (!isConnectionError && !isFetchFailed) {
-        throw fetchErr;
-      }
-      const standaloneResult = await analyzeFileStandalone(fileId, blobInfo);
-      if (!standaloneResult.success) {
-        console.error('Standalone analysis failed:', standaloneResult.message);
-        return NextResponse.json(
-          { error: 'Analysis failed', details: standaloneResult.message },
-          { status: 500 }
-        );
-      }
-      data = standaloneResult;
     }
 
     if (data.success && fileId && process.env.POSTGRES_URL) {
@@ -103,4 +169,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-} 
+}

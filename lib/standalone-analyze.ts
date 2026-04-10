@@ -1,5 +1,7 @@
 import path from 'path';
-import { parse } from 'csv-parse/sync';
+import { Readable } from 'node:stream';
+import { parse as parseCsvStream } from 'csv-parse';
+import { parse as parseCsvSync } from 'csv-parse/sync';
 import * as XLSX from 'xlsx';
 import { getFileBuffer, getFileBufferFromBlobPathname } from './standalone-upload';
 
@@ -7,6 +9,8 @@ const OPENROUTER_API = 'https://openrouter.ai/api/v1/chat/completions';
 const MODEL = 'arcee-ai/trinity-large-preview:free';
 
 interface DataSummary {
+  /** When true, statistics were computed on the first N rows only (large file cap). */
+  row_sample_capped?: boolean;
   rows: number;
   columns: number;
   column_names: string[];
@@ -73,6 +77,44 @@ function computeStatistics(
   return stats;
 }
 
+const LARGE_CSV_BYTES = 1_000_000;
+const MAX_ROWS_FOR_STATS = 60_000;
+
+const csvParserOptions = {
+  columns: true as const,
+  skip_empty_lines: true,
+  relax_column_count: true,
+  relax_quotes: true,
+  bom: true,
+  trim: true,
+};
+
+async function parseCsvBufferWithRowCap(buffer: Buffer): Promise<{
+  rows: Record<string, unknown>[];
+  capped: boolean;
+}> {
+  const parser = parseCsvStream(csvParserOptions);
+  const source = Readable.from(buffer);
+  source.pipe(parser);
+  const rows: Record<string, unknown>[] = [];
+  try {
+    for await (const row of parser) {
+      rows.push(row as Record<string, unknown>);
+      if (rows.length >= MAX_ROWS_FOR_STATS) {
+        parser.destroy();
+        source.destroy();
+        return { rows, capped: true };
+      }
+    }
+    return { rows, capped: false };
+  } catch {
+    if (rows.length >= MAX_ROWS_FOR_STATS) {
+      return { rows, capped: true };
+    }
+    throw new Error('Failed to parse CSV stream');
+  }
+}
+
 async function parseFileFromBuffer(
   buffer: Buffer,
   filename: string
@@ -80,25 +122,30 @@ async function parseFileFromBuffer(
   const ext = path.extname(filename).toLowerCase();
   let rows: Record<string, unknown>[] = [];
   let columns: string[] = [];
+  let rowSampleCapped = false;
 
   if (ext === '.csv') {
-    const content = buffer.toString('utf-8');
-    const parsed = parse(content, {
-      columns: true,
-      skip_empty_lines: true,
-      relax_column_count: true,
-      relax_quotes: true,
-      bom: true,
-      trim: true,
-    }) as Record<string, unknown>[];
-    rows = parsed;
-    columns = parsed.length > 0 ? Object.keys(parsed[0]) : [];
+    if (buffer.byteLength >= LARGE_CSV_BYTES) {
+      const { rows: streamed, capped } = await parseCsvBufferWithRowCap(buffer);
+      rows = streamed;
+      rowSampleCapped = capped;
+    } else {
+      const content = buffer.toString('utf-8');
+      const parsed = parseCsvSync(content, csvParserOptions) as Record<string, unknown>[];
+      rows = parsed;
+    }
+    columns = rows.length > 0 ? Object.keys(rows[0]) : [];
   } else if (ext === '.xlsx' || ext === '.xls') {
     const workbook = XLSX.read(buffer, { type: 'buffer' });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     const data = XLSX.utils.sheet_to_json(sheet) as Record<string, unknown>[];
-    rows = data;
-    columns = data.length > 0 ? Object.keys(data[0]) : [];
+    if (data.length > MAX_ROWS_FOR_STATS) {
+      rows = data.slice(0, MAX_ROWS_FOR_STATS);
+      rowSampleCapped = true;
+    } else {
+      rows = data;
+    }
+    columns = rows.length > 0 ? Object.keys(rows[0]) : [];
   } else {
     throw new Error(`Unsupported format: ${ext}`);
   }
@@ -120,6 +167,7 @@ async function parseFileFromBuffer(
     .join('\n');
 
   const data_summary: DataSummary = {
+    ...(rowSampleCapped ? { row_sample_capped: true } : {}),
     rows: rows.length,
     columns: columns.length,
     column_names: columns,
@@ -155,13 +203,16 @@ function buildInsightsPrompt(
   computed_stats: Record<string, ColumnStats>
 ): string {
   const statsBlock = formatStatsForPrompt(computed_stats);
+  const capNote = data_summary.row_sample_capped
+    ? `\nNOTE: This file is large. Statistics and sample reflect the first ${data_summary.rows.toLocaleString()} rows only; the file may contain more rows.\n`
+    : '';
   return `
 You are a brilliant and enthusiastic data analyst who loves discovering hidden patterns in data! 🎯
 
 Your mission: Analyze this dataset and provide EXCITING, SPECIFIC insights that will blow the user's mind!
 
 CRITICAL: You MUST use ONLY the actual numbers provided below. NEVER use placeholders like $X, XX, Y%, $A, $B, XXXX, etc. Every number in your insights MUST come from the Pre-Computed Statistics or Sample Data sections.
-
+${capNote}
 Dataset Summary:
 - Rows: ${data_summary.rows}
 - Columns: ${data_summary.columns}
@@ -174,7 +225,7 @@ ${statsBlock}
 Sample Data (first 15 rows):
 ${sample_data}
 
-Now, let's dive deep! Provide 10-15 AMAZING insights about THIS specific dataset. Rank them by importance (most impactful first). Be:
+Now, let's dive deep! Provide 6-9 focused insights about THIS specific dataset. Rank them by importance (most impactful first). Be:
 ✨ SPECIFIC - Use ONLY the actual numbers from the Pre-Computed Statistics above (e.g. $50,000 not $X, 83.3% not Y%)
 🎉 EXCITING - Make it fun and engaging with emojis and personality
 💡 DETAILED - Show the exact patterns with real numbers
@@ -306,6 +357,7 @@ export async function analyzeFileStandalone(
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`,
       },
+      signal: AbortSignal.timeout(240_000),
       body: JSON.stringify({
         model: MODEL,
         messages: [
@@ -316,7 +368,7 @@ export async function analyzeFileStandalone(
           },
           { role: 'user', content: prompt },
         ],
-        max_tokens: 2000,
+        max_tokens: 1600,
         temperature: 0.2,
       }),
     });
