@@ -180,7 +180,13 @@ async function parseFileFromBuffer(
   } else if (ext === '.xlsx' || ext === '.xls') {
     let workbook: XLSX.WorkBook;
     try {
-      workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true });
+      // Skip rich text / number-format strings where possible — faster on large workbooks.
+      workbook = XLSX.read(buffer, {
+        type: 'buffer',
+        cellDates: true,
+        cellNF: false,
+        cellHTML: false,
+      });
     } catch (e) {
       throw new Error(
         `Could not read Excel file: ${e instanceof Error ? e.message : 'unknown error'}`
@@ -193,10 +199,24 @@ async function parseFileFromBuffer(
     if (!sheet) {
       throw new Error('Could not read the first worksheet');
     }
-    // raw:false runs number/date formatters and can throw on odd Excel exports; raw:true is safer.
+    // Limit the worksheet range before sheet_to_json so we never allocate 500k+ row objects
+    // (e.g. Online Retail). Same cap as CSV: first header row + MAX_ROWS_FOR_STATS data rows.
+    const sheetOpts: XLSX.Sheet2JSONOpts = { defval: '', raw: true };
+    const ref = sheet['!ref'];
+    if (ref) {
+      const fullRange = XLSX.utils.decode_range(ref);
+      const lastAllowedR = fullRange.s.r + MAX_ROWS_FOR_STATS;
+      if (fullRange.e.r > lastAllowedR) {
+        rowSampleCapped = true;
+        sheetOpts.range = {
+          s: fullRange.s,
+          e: { r: lastAllowedR, c: fullRange.e.c },
+        };
+      }
+    }
     let data: Record<string, unknown>[];
     try {
-      data = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: true }) as Record<string, unknown>[];
+      data = XLSX.utils.sheet_to_json(sheet, sheetOpts) as Record<string, unknown>[];
     } catch (e) {
       throw new Error(
         `Could not convert Excel sheet to rows: ${e instanceof Error ? e.message : 'unknown error'}`
