@@ -8,6 +8,48 @@ import { getFileBuffer, getFileBufferFromBlobPathname } from './standalone-uploa
 const OPENROUTER_API = 'https://openrouter.ai/api/v1/chat/completions';
 const DEFAULT_MODEL = 'arcee-ai/trinity-large-preview:free';
 
+type OpenRouterChatEnvelope = {
+  choices?: { message?: { content?: string } }[];
+  error?: { message?: string; code?: number | string };
+};
+
+function openRouterAppHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+  };
+  const referer =
+    process.env.OPENROUTER_HTTP_REFERER ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '');
+  if (referer) {
+    headers['HTTP-Referer'] = referer;
+  }
+  headers['X-Title'] = process.env.OPENROUTER_APP_TITLE || 'DatRep';
+  return headers;
+}
+
+function parseOpenRouterBody(
+  raw: string,
+  httpStatus: number
+): { ok: true; data: OpenRouterChatEnvelope } | { ok: false; message: string } {
+  const cleaned = raw.replace(/^\uFEFF/, '').trim();
+  if (!cleaned) {
+    return {
+      ok: false,
+      message: `OpenRouter returned an empty body (HTTP ${httpStatus}). Check OPENROUTER_API_KEY, OPENROUTER_MODEL, and OpenRouter status.`,
+    };
+  }
+  try {
+    return { ok: true, data: JSON.parse(cleaned) as OpenRouterChatEnvelope };
+  } catch {
+    const snippet = cleaned.replace(/\s+/g, ' ').slice(0, 480);
+    return {
+      ok: false,
+      message: `OpenRouter returned non-JSON (HTTP ${httpStatus}): ${snippet}`,
+    };
+  }
+}
+
 interface DataSummary {
   /** When true, statistics were computed on the first N rows only (large file cap). */
   row_sample_capped?: boolean;
@@ -380,6 +422,7 @@ export async function analyzeFileStandalone(
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`,
+        ...openRouterAppHeaders(),
       },
       signal: AbortSignal.timeout(240_000),
       body: JSON.stringify({
@@ -397,17 +440,25 @@ export async function analyzeFileStandalone(
       }),
     });
 
-    if (!response.ok) {
-      const err = await response.text();
-      return { success: false, message: `OpenRouter API error: ${err}` };
+    const rawBody = await response.text();
+    const parsedBody = parseOpenRouterBody(rawBody, response.status);
+    if (!parsedBody.ok) {
+      return { success: false, message: parsedBody.message };
+    }
+    const data = parsedBody.data;
+
+    if (data.error?.message) {
+      return { success: false, message: `OpenRouter: ${data.error.message}` };
     }
 
-    let data: { choices?: { message?: { content?: string } }[] };
-    try {
-      data = (await response.json()) as typeof data;
-    } catch {
-      return { success: false, message: 'OpenRouter returned a non-JSON response' };
+    if (!response.ok) {
+      const fallback = rawBody.replace(/^\uFEFF/, '').trim().slice(0, 800);
+      return {
+        success: false,
+        message: `OpenRouter API error (HTTP ${response.status}): ${fallback || response.statusText}`,
+      };
     }
+
     const content = data.choices?.[0]?.message?.content ?? '';
     const parsed = parseInsightsResponse(content);
 
