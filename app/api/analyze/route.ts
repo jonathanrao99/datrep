@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { saveAnalysis, updateFileStatus } from '@/lib/db';
+import { sanitizeForJson } from '@/lib/json-safe';
 import { analyzeFileStandalone } from '@/lib/standalone-analyze';
 
 export const runtime = 'nodejs';
@@ -25,12 +26,20 @@ async function fetchFromFastAPI(
     body: JSON.stringify({ file_id: fileId }),
     signal: AbortSignal.timeout(BACKEND_FETCH_MS),
   });
+  const rawText = await response.text();
   if (response.ok) {
-    const data = (await response.json()) as AnalyzePayload;
-    return { ok: true, data };
+    try {
+      const data = JSON.parse(rawText) as AnalyzePayload;
+      return { ok: true, data };
+    } catch {
+      return {
+        ok: false,
+        status: 502,
+        body: 'Analytics backend returned a non-JSON body (check BACKEND_URL)',
+      };
+    }
   }
-  const body = await response.text();
-  return { ok: false, status: response.status, body };
+  return { ok: false, status: response.status, body: rawText };
 }
 
 function isBackendUnreachable(err: unknown): boolean {
@@ -160,7 +169,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json(data);
+    return NextResponse.json(sanitizeForJson(data));
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('Analysis error:', error);

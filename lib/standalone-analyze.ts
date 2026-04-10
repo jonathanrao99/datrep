@@ -6,7 +6,7 @@ import * as XLSX from 'xlsx';
 import { getFileBuffer, getFileBufferFromBlobPathname } from './standalone-upload';
 
 const OPENROUTER_API = 'https://openrouter.ai/api/v1/chat/completions';
-const MODEL = 'arcee-ai/trinity-large-preview:free';
+const DEFAULT_MODEL = 'arcee-ai/trinity-large-preview:free';
 
 interface DataSummary {
   /** When true, statistics were computed on the first N rows only (large file cap). */
@@ -136,9 +136,25 @@ async function parseFileFromBuffer(
     }
     columns = rows.length > 0 ? Object.keys(rows[0]) : [];
   } else if (ext === '.xlsx' || ext === '.xls') {
-    const workbook = XLSX.read(buffer, { type: 'buffer' });
+    let workbook: XLSX.WorkBook;
+    try {
+      workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true });
+    } catch (e) {
+      throw new Error(
+        `Could not read Excel file: ${e instanceof Error ? e.message : 'unknown error'}`
+      );
+    }
+    if (!workbook.SheetNames?.length) {
+      throw new Error('Excel file has no worksheets');
+    }
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const data = XLSX.utils.sheet_to_json(sheet) as Record<string, unknown>[];
+    if (!sheet) {
+      throw new Error('Could not read the first worksheet');
+    }
+    const data = XLSX.utils.sheet_to_json(sheet, {
+      defval: '',
+      raw: false,
+    }) as Record<string, unknown>[];
     if (data.length > MAX_ROWS_FOR_STATS) {
       rows = data.slice(0, MAX_ROWS_FOR_STATS);
       rowSampleCapped = true;
@@ -359,7 +375,7 @@ export async function analyzeFileStandalone(
       },
       signal: AbortSignal.timeout(240_000),
       body: JSON.stringify({
-        model: MODEL,
+        model: process.env.OPENROUTER_MODEL || DEFAULT_MODEL,
         messages: [
           {
             role: 'system',
@@ -378,7 +394,12 @@ export async function analyzeFileStandalone(
       return { success: false, message: `OpenRouter API error: ${err}` };
     }
 
-    const data = await response.json();
+    let data: { choices?: { message?: { content?: string } }[] };
+    try {
+      data = (await response.json()) as typeof data;
+    } catch {
+      return { success: false, message: 'OpenRouter returned a non-JSON response' };
+    }
     const content = data.choices?.[0]?.message?.content ?? '';
     const parsed = parseInsightsResponse(content);
 
@@ -388,7 +409,7 @@ export async function analyzeFileStandalone(
       data_summary,
       insights: {
         ...parsed,
-        generated_at: new Date().toISOString() + 'Z',
+        generated_at: new Date().toISOString(),
       },
       message: 'Analysis completed successfully',
       generated_at: new Date().toISOString(),
