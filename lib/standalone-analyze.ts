@@ -151,10 +151,15 @@ async function parseFileFromBuffer(
     if (!sheet) {
       throw new Error('Could not read the first worksheet');
     }
-    const data = XLSX.utils.sheet_to_json(sheet, {
-      defval: '',
-      raw: false,
-    }) as Record<string, unknown>[];
+    // raw:false runs number/date formatters and can throw on odd Excel exports; raw:true is safer.
+    let data: Record<string, unknown>[];
+    try {
+      data = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: true }) as Record<string, unknown>[];
+    } catch (e) {
+      throw new Error(
+        `Could not convert Excel sheet to rows: ${e instanceof Error ? e.message : 'unknown error'}`
+      );
+    }
     if (data.length > MAX_ROWS_FOR_STATS) {
       rows = data.slice(0, MAX_ROWS_FOR_STATS);
       rowSampleCapped = true;
@@ -289,7 +294,10 @@ function extractJsonFromResponse(text: string): string | null {
 const CONFIDENCE_ORDER = { high: 0, medium: 1, low: 2 };
 
 function rankInsightsByImportance(insights: unknown[]): unknown[] {
-  const arr = insights as { confidence?: string }[];
+  const arr = (insights as unknown[]).filter(
+    (x): x is { confidence?: string } =>
+      x != null && typeof x === 'object' && !Array.isArray(x)
+  );
   return [...arr].sort((a, b) => {
     const aScore = CONFIDENCE_ORDER[a.confidence as keyof typeof CONFIDENCE_ORDER] ?? 1;
     const bScore = CONFIDENCE_ORDER[b.confidence as keyof typeof CONFIDENCE_ORDER] ?? 1;

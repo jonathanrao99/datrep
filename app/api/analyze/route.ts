@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { saveAnalysis, updateFileStatus } from '@/lib/db';
+import { getFileById, saveAnalysis, updateFileStatus } from '@/lib/db';
 import { sanitizeForJson } from '@/lib/json-safe';
 import { analyzeFileStandalone } from '@/lib/standalone-analyze';
 
@@ -50,6 +50,37 @@ function isBackendUnreachable(err: unknown): boolean {
     if (cause?.code === 'ECONNREFUSED' || cause?.code === 'ECONNRESET') return true;
   }
   return false;
+}
+
+/** Safe subset when full payload fails JSON serialization (omit statistics blob). */
+function slimDataSummaryForResponse(ds: unknown): Record<string, unknown> | undefined {
+  if (!ds || typeof ds !== 'object') return undefined;
+  const o = ds as Record<string, unknown>;
+  const columnNames = Array.isArray(o.column_names) ? o.column_names.map((x) => String(x)) : [];
+  const dataTypes =
+    o.data_types && typeof o.data_types === 'object' && !Array.isArray(o.data_types)
+      ? Object.fromEntries(
+          Object.entries(o.data_types as Record<string, unknown>).map(([k, v]) => [k, String(v)])
+        )
+      : {};
+  const missingValues =
+    o.missing_values && typeof o.missing_values === 'object' && !Array.isArray(o.missing_values)
+      ? Object.fromEntries(
+          Object.entries(o.missing_values as Record<string, unknown>).map(([k, v]) => [
+            k,
+            Number(v) || 0,
+          ])
+        )
+      : {};
+  const out: Record<string, unknown> = {
+    rows: Number(o.rows) || 0,
+    columns: Number(o.columns) || 0,
+    column_names: columnNames,
+    data_types: dataTypes,
+    missing_values: missingValues,
+  };
+  if (o.row_sample_capped === true) out.row_sample_capped = true;
+  return out;
 }
 
 export async function POST(request: NextRequest) {
@@ -147,29 +178,57 @@ export async function POST(request: NextRequest) {
 
     if (data.success && fileId && process.env.POSTGRES_URL) {
       try {
-        const insights = (data as { insights?: { insights?: unknown[] } }).insights ?? {};
-        const insightsArray = Array.isArray(insights.insights) ? insights.insights : [];
-        const dataSummary = (data as { data_summary?: Record<string, unknown> }).data_summary ?? {};
+        const fileRow = await getFileById(fileId);
+        if (!fileRow) {
+          // Upload can succeed without a DB row (e.g. createFile failed); skip persist to avoid FK errors.
+        } else {
+          const insights = (data as { insights?: { insights?: unknown[] } }).insights ?? {};
+          const insightsArray = Array.isArray(insights.insights) ? insights.insights : [];
+          const dataSummary = (data as { data_summary?: Record<string, unknown> }).data_summary ?? {};
 
-        await saveAnalysis({
-          id: data.analysis_id ?? `analysis_${fileId}_${Date.now()}`,
-          fileId,
-          dataSummary,
-          insights,
-          statistics: dataSummary.statistics,
-          missingValues: dataSummary.missing_values,
-          dataTypes: dataSummary.data_types,
-          charts: [],
-          fileInfo: { original_filename: 'dataset' },
-        });
+          await saveAnalysis({
+            id: data.analysis_id ?? `analysis_${fileId}_${Date.now()}`,
+            fileId,
+            dataSummary,
+            insights,
+            statistics: dataSummary.statistics,
+            missingValues: dataSummary.missing_values,
+            dataTypes: dataSummary.data_types,
+            charts: [],
+            fileInfo: { original_filename: 'dataset' },
+          });
 
-        await updateFileStatus(fileId, 'completed', insightsArray.length, 0);
+          await updateFileStatus(fileId, 'completed', insightsArray.length, 0);
+        }
       } catch (dbError) {
         console.error('DB save error (analysis still completed):', dbError);
       }
     }
 
-    return NextResponse.json(sanitizeForJson(data));
+    try {
+      return NextResponse.json(sanitizeForJson(data));
+    } catch (serializeErr) {
+      console.error('Analyze response serialization failed:', serializeErr);
+      const payload = {
+        success: data.success,
+        analysis_id: data.analysis_id,
+        message: data.message ?? 'Analysis completed',
+        generated_at: (data as { generated_at?: string }).generated_at,
+        data_summary: slimDataSummaryForResponse((data as { data_summary?: unknown }).data_summary),
+        insights: {
+          insights: [
+            {
+              title: 'Analysis completed',
+              description:
+                'The full AI response could not be serialized for the API. Check Vercel function logs.',
+              business_impact: 'n/a',
+              confidence: 'low',
+            },
+          ],
+        },
+      };
+      return NextResponse.json(payload, { status: 200 });
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('Analysis error:', error);
