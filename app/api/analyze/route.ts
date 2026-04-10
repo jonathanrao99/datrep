@@ -4,7 +4,8 @@ import { sanitizeForJson } from '@/lib/json-safe';
 import { analyzeFileStandalone } from '@/lib/standalone-analyze';
 
 export const runtime = 'nodejs';
-export const maxDuration = 300;
+/** Pro + Fluid: up to 800s. Hobby is capped by Vercel at 300s regardless. */
+export const maxDuration = 800;
 
 const BACKEND_FETCH_MS = 10_000;
 

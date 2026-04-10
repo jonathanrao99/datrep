@@ -8,6 +8,14 @@ import { getFileBuffer, getFileBufferFromBlobPathname } from './standalone-uploa
 const OPENROUTER_API = 'https://openrouter.ai/api/v1/chat/completions';
 const DEFAULT_MODEL = 'arcee-ai/trinity-large-preview:free';
 
+/** Keep prompt small so the model finishes before Vercel/serverless limits. */
+const SAMPLE_ROWS_IN_PROMPT = 6;
+const STATS_TOP_CATEGORICAL = 3;
+const MAX_COLUMN_NAME_PROMPT_LEN = 72;
+const DEFAULT_LLM_MAX_TOKENS = 768;
+/** Default leaves room for Blob fetch + XLSX.parse on large files before the LLM call. */
+const DEFAULT_LLM_TIMEOUT_MS = 165_000;
+
 type OpenRouterChatEnvelope = {
   choices?: { message?: { content?: string } }[];
   error?: { message?: string; code?: number | string };
@@ -121,6 +129,9 @@ function computeStatistics(
 
 const LARGE_CSV_BYTES = 1_000_000;
 const MAX_ROWS_FOR_STATS = 60_000;
+/** Workbooks this large spend too long in XLSX.read + stats; sample fewer rows for speed. */
+const LARGE_XLSX_BYTES = 8 * 1024 * 1024;
+const LARGE_XLSX_ROW_CAP = 20_000;
 
 const csvParserOptions = {
   columns: true as const,
@@ -199,13 +210,16 @@ async function parseFileFromBuffer(
     if (!sheet) {
       throw new Error('Could not read the first worksheet');
     }
-    // Limit the worksheet range before sheet_to_json so we never allocate 500k+ row objects
-    // (e.g. Online Retail). Same cap as CSV: first header row + MAX_ROWS_FOR_STATS data rows.
+    const xlsxRowCap =
+      buffer.byteLength > LARGE_XLSX_BYTES
+        ? Math.min(MAX_ROWS_FOR_STATS, LARGE_XLSX_ROW_CAP)
+        : MAX_ROWS_FOR_STATS;
+    // Limit the worksheet range before sheet_to_json so we never allocate 500k+ row objects.
     const sheetOpts: XLSX.Sheet2JSONOpts = { defval: '', raw: true };
     const ref = sheet['!ref'];
     if (ref) {
       const fullRange = XLSX.utils.decode_range(ref);
-      const lastAllowedR = fullRange.s.r + MAX_ROWS_FOR_STATS;
+      const lastAllowedR = fullRange.s.r + xlsxRowCap;
       if (fullRange.e.r > lastAllowedR) {
         rowSampleCapped = true;
         sheetOpts.range = {
@@ -222,8 +236,8 @@ async function parseFileFromBuffer(
         `Could not convert Excel sheet to rows: ${e instanceof Error ? e.message : 'unknown error'}`
       );
     }
-    if (data.length > MAX_ROWS_FOR_STATS) {
-      rows = data.slice(0, MAX_ROWS_FOR_STATS);
+    if (data.length > xlsxRowCap) {
+      rows = data.slice(0, xlsxRowCap);
       rowSampleCapped = true;
     } else {
       rows = data;
@@ -244,7 +258,7 @@ async function parseFileFromBuffer(
 
   const computed_stats = computeStatistics(rows, columns, dataTypes);
 
-  const sampleRows = rows.slice(0, 15);
+  const sampleRows = rows.slice(0, SAMPLE_ROWS_IN_PROMPT);
   const sample_data = sampleRows
     .map((r) => columns.map((c) => String(r[c] ?? '')).join(', '))
     .join('\n');
@@ -262,19 +276,26 @@ async function parseFileFromBuffer(
   return { data_summary, sample_data, computed_stats };
 }
 
+function shortColLabel(col: string): string {
+  return col.length > MAX_COLUMN_NAME_PROMPT_LEN
+    ? `${col.slice(0, MAX_COLUMN_NAME_PROMPT_LEN)}…`
+    : col;
+}
+
 function formatStatsForPrompt(stats: Record<string, ColumnStats>): string {
   const lines: string[] = [];
   for (const [col, s] of Object.entries(stats)) {
+    const label = shortColLabel(col);
     if (s.sum != null && s.min != null && s.max != null) {
       const pct = s.pct_of_total != null ? ` (${s.pct_of_total.toFixed(1)}% of total)` : '';
-      lines.push(`- ${col}: sum=${s.sum.toLocaleString()}, min=${s.min}, max=${s.max}, avg=${s.avg?.toFixed(2)}${pct}`);
+      lines.push(`- ${label}: sum=${s.sum.toLocaleString()}, min=${s.min}, max=${s.max}, avg=${s.avg?.toFixed(2)}${pct}`);
     } else if (s.value_counts) {
       const top = Object.entries(s.value_counts)
         .sort((a, b) => b[1] - a[1])
-        .slice(0, 5)
+        .slice(0, STATS_TOP_CATEGORICAL)
         .map(([k, v]) => `${k}: ${v}`)
         .join(', ');
-      lines.push(`- ${col}: top values: ${top}`);
+      lines.push(`- ${label}: top: ${top}`);
     }
   }
   return lines.join('\n');
@@ -287,50 +308,24 @@ function buildInsightsPrompt(
 ): string {
   const statsBlock = formatStatsForPrompt(computed_stats);
   const capNote = data_summary.row_sample_capped
-    ? `\nNOTE: This file is large. Statistics and sample reflect the first ${data_summary.rows.toLocaleString()} rows only; the file may contain more rows.\n`
+    ? `\nNOTE: Large file — stats/sample are the first ${data_summary.rows.toLocaleString()} rows only.\n`
     : '';
-  return `
-You are a brilliant and enthusiastic data analyst who loves discovering hidden patterns in data! 🎯
-
-Your mission: Analyze this dataset and provide EXCITING, SPECIFIC insights that will blow the user's mind!
-
-CRITICAL: You MUST use ONLY the actual numbers provided below. NEVER use placeholders like $X, XX, Y%, $A, $B, XXXX, etc. Every number in your insights MUST come from the Pre-Computed Statistics or Sample Data sections.
+  const namesForPrompt = data_summary.column_names.map(shortColLabel);
+  return `You are a data analyst. Use ONLY numbers from the statistics and sample below — no placeholders ($X, Y%, etc.).
 ${capNote}
-Dataset Summary:
-- Rows: ${data_summary.rows}
-- Columns: ${data_summary.columns}
-- Column names: ${JSON.stringify(data_summary.column_names)}
-- Data types: ${JSON.stringify(data_summary.data_types)}
+Summary: ${data_summary.rows} rows, ${data_summary.columns} columns.
+Columns: ${JSON.stringify(namesForPrompt)}
+Types: ${JSON.stringify(data_summary.data_types)}
 
-Pre-Computed Statistics (USE THESE EXACT NUMBERS IN YOUR INSIGHTS):
+Statistics:
 ${statsBlock}
 
-Sample Data (first 15 rows):
+Sample (${SAMPLE_ROWS_IN_PROMPT} rows):
 ${sample_data}
 
-Now, let's dive deep! Provide 6-9 focused insights about THIS specific dataset. Rank them by importance (most impactful first). Be:
-✨ SPECIFIC - Use ONLY the actual numbers from the Pre-Computed Statistics above (e.g. $50,000 not $X, 83.3% not Y%)
-🎉 EXCITING - Make it fun and engaging with emojis and personality
-💡 DETAILED - Show the exact patterns with real numbers
-
-Format as JSON:
-{
-    "insights": [
-        {
-            "title": "🎯 Specific insight with emoji",
-            "description": "Detailed description with EXACT numbers from the statistics above - e.g. 'Gross Sales is $50,000 (83.3% of total)'",
-            "business_impact": "What this means for business decisions",
-            "confidence": "high/medium/low",
-            "fun_fact": "One surprising detail with specific numbers from the data"
-        }
-    ],
-    "key_findings": ["Finding 1 with specific numbers", "Finding 2 with specific numbers"],
-    "recommendations": ["Actionable recommendation 1", "Actionable recommendation 2"],
-    "data_story": "A brief story with specific examples and numbers"
-}
-
-REMEMBER: Every number in description, business_impact, fun_fact, and key_findings MUST be a real value from the Pre-Computed Statistics. No placeholders allowed.
-`;
+Return compact JSON only (no markdown). Exactly 4–5 insights, ranked by importance. Keep each description under 2 sentences.
+Schema:
+{"insights":[{"title":"string","description":"string","business_impact":"string","confidence":"high|medium|low","fun_fact":"string"}],"key_findings":["string"],"recommendations":["string"],"data_story":"string"}`;
 }
 
 function extractJsonFromResponse(text: string): string | null {
@@ -437,6 +432,15 @@ export async function analyzeFileStandalone(
     );
     const prompt = buildInsightsPrompt(data_summary, sample_data, computed_stats);
 
+    const llmTimeoutMs = Math.max(
+      30_000,
+      Number(process.env.OPENROUTER_FETCH_TIMEOUT_MS) || DEFAULT_LLM_TIMEOUT_MS
+    );
+    const llmMaxTokens = Math.min(
+      4096,
+      Math.max(256, Number(process.env.OPENROUTER_MAX_TOKENS) || DEFAULT_LLM_MAX_TOKENS)
+    );
+
     const response = await fetch(OPENROUTER_API, {
       method: 'POST',
       headers: {
@@ -444,19 +448,19 @@ export async function analyzeFileStandalone(
         Authorization: `Bearer ${apiKey}`,
         ...openRouterAppHeaders(),
       },
-      signal: AbortSignal.timeout(240_000),
+      signal: AbortSignal.timeout(llmTimeoutMs),
       body: JSON.stringify({
         model: process.env.OPENROUTER_MODEL || DEFAULT_MODEL,
         messages: [
           {
             role: 'system',
             content:
-              'You are a brilliant, enthusiastic data analyst. You MUST use only actual numbers from the provided statistics—never placeholders like $X, XX, Y%, or XXXX. Every number in your response must be real data. Always respond with valid JSON.',
+              'Reply with a single valid JSON object only. Use only real numbers from the user message; never placeholders.',
           },
           { role: 'user', content: prompt },
         ],
-        max_tokens: 1600,
-        temperature: 0.2,
+        max_tokens: llmMaxTokens,
+        temperature: 0.15,
       }),
     });
 
@@ -494,9 +498,22 @@ export async function analyzeFileStandalone(
       generated_at: new Date().toISOString(),
     };
   } catch (err) {
+    const e = err instanceof Error ? err : null;
+    const looksLikeTimeout =
+      e &&
+      (e.name === 'TimeoutError' ||
+        e.name === 'AbortError' ||
+        /timed out|timeout|aborted due to timeout/i.test(e.message));
+    if (looksLikeTimeout) {
+      return {
+        success: false,
+        message:
+          'The AI request timed out. Try a faster paid model (OPENROUTER_MODEL), raise OPENROUTER_FETCH_TIMEOUT_MS, or use Pro + Fluid (this app uses maxDuration 800 on analyze). Hobby is limited to ~300s total.',
+      };
+    }
     return {
       success: false,
-      message: err instanceof Error ? err.message : 'Analysis failed',
+      message: e?.message ?? 'Analysis failed',
     };
   }
 }

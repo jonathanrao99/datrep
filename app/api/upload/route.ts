@@ -6,7 +6,8 @@ import { parseFileWithStats, parseBufferForPreview } from '@/lib/file-stats';
 import { parseWithAI } from '@/lib/ai-file-parser';
 
 export const runtime = 'nodejs';
-export const maxDuration = 300;
+/** Large Excel/CSV parsing + preview; align with /api/analyze (Pro Fluid allows 800s). */
+export const maxDuration = 800;
 
 export async function POST(request: NextRequest) {
   try {
