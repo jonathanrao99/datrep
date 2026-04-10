@@ -1,158 +1,91 @@
-# DatRep - AI-Powered Data Analysis Platform
+# DatRep
 
-<div align="center">
-  <strong>🚀 Modern AI-powered data analysis platform</strong><br>
-  <em>Upload CSV/XLSX files and get instant insights via GPT, charts, and reports</em>
-</div>
+**Your spreadsheet showed up. Now what?**
 
-<br>
+DatRep is for anyone who has a CSV or Excel file and wants answers without living in pivot tables all weekend. Upload it, poke at a preview, let AI summarize what it *thinks* is going on, then go deeper with full insights, charts, and a chat that actually read your file—not a generic essay about “data.”
 
-<div align="center">
-  <a href="#quick-start">Quick Start</a>
-  <span> · </span>
-  <a href="#features">Features</a>
-  <span> · </span>
-  <a href="docs/SECURITY.md">Security</a>
-</div>
+No PhD required. No twelve-step enterprise signup. Just your data and a bit of curiosity.
 
 ---
 
-## 🎯 **What is DatRep?**
+## What you actually get
 
-DatRep is a modern, AI-powered data analysis platform that transforms how you interact with your data. Upload CSV/XLSX files (up to 100MB) and receive instant, intelligent insights powered by GPT-4.
+- **Upload** — Drag in `.csv`, `.xlsx`, or `.xls` (we’re generous on size; big files on Vercel use [Vercel Blob](https://vercel.com/docs/storage/vercel-blob) so you don’t hit tiny server limits).
+- **A real preview** — Scroll the grid, spot weird columns, sanity-check before you trust anything.
+- **AI that’s scoped to *your* rows** — Summaries and analysis are driven by what you uploaded, not vibes.
+- **Insights + charts** — Enough to brief someone or decide what to dig into next.
+- **Chat with the dataset** — Ask “what’s driving this?” in plain English.
 
-### **Key Features**
-- 📊 **Smart Data Analysis**: Upload CSV/XLSX files up to 100MB
-- 🤖 **AI-Powered Insights**: GPT-4 integration for intelligent analysis
-- 📈 **Interactive Charts**: Dynamic visualizations with Recharts
-- 💬 **Chat with Data**: Ask questions about your datasets
-- 📱 **Responsive Design**: Works on all devices
-- 🚀 **Real-time Processing**: Instant analysis and insights
+The UI is meant to feel like a product you’d want to use, not a homework assignment.
 
 ---
 
-## 🚀 **Quick Start**
+## Quick start (local)
 
-### **Prerequisites**
-- Node.js 18+ and npm
-- Python 3.11+
-- OpenAI API key
+**You’ll need:** Node 18+, Python 3.11+, and an API key from [OpenRouter](https://openrouter.ai/) or OpenAI (see `.env.example`).
 
-### **Installation**
+```bash
+git clone https://github.com/jonathanrao99/datrep.git
+cd datrep
 
-1. **Install dependencies**:
-   ```bash
-   # Install Node.js dependencies
-   npm install
-   
-   # Install Python dependencies
-   pip install -r backend/requirements.txt
-   ```
+npm install
+pip3 install -r requirements.txt    # or: pip3 install -r backend/requirements.txt
 
-2. **Set up environment** (single file for frontend + backend):
-   ```bash
-   cp .env.example .env
-   # Edit .env and add OPENROUTER_API_KEY or OPENAI_API_KEY, AUTH_SECRET, etc.
-   ```
+cp .env.example .env
+# Fill in at least OPENROUTER_API_KEY (or OPENAI_API_KEY), NEXTAUTH_SECRET, etc.
 
-3. **Start the application**:
-   ```bash
-   # Option A: one command (starts backend + frontend)
-   python scripts/start-dev.py
-
-   # Option B: two terminals
-   # Terminal 1: cd backend && python -m uvicorn main:app --host 0.0.0.0 --port 8000
-   # Terminal 2: npm run dev
-   ```
-
-4. **Access the application**:
-   - 🌐 **Frontend**: http://localhost:3000
-   - 📊 **Backend**: http://localhost:8000
-   - 📚 **API Docs**: http://localhost:8000/docs
-
----
-
-## 🎨 **User Experience**
-
-### **Workflow**
-1. **Upload Data**: Drag-and-drop CSV/XLSX files (up to 100MB)
-2. **Auto-Analysis**: Instant AI-powered insights and statistics
-3. **Explore Insights**: View detailed analysis with charts and recommendations
-4. **Chat with Data**: Ask questions about your dataset
-5. **Export Results**: Download reports and visualizations
-
-### **Sample AI Insights**
+# Easiest: one process that boots API + web
+python3 scripts/start-dev.py
 ```
-🎵 Highest Sales: Samsung Galaxy leads with 1.2M units sold!
-💰 Revenue Champion: MacBook Pro generates $1.6B despite lower sales!
-⚡ Pattern Discovery: Higher-priced items generate more revenue per unit!
-📈 Growth Trend: Sales increase by 15% month-over-month!
+
+Then open **http://localhost:3000**. API lives at **http://localhost:8000** with docs at **/docs** if you’re poking the FastAPI side.
+
+Prefer two terminals? `cd backend && python -m uvicorn main:app --host 0.0.0.0 --port 8000` and, from the repo root, `npm run dev`.
+
+---
+
+## How it’s built
+
+| Layer | What |
+| ----- | ---- |
+| **Frontend** | Next.js 15 (App Router), TypeScript, Tailwind, shadcn-style UI, Recharts |
+| **Optional API** | FastAPI + Pandas for uploads, analysis, and chat when you run the Python service |
+| **AI** | OpenRouter (default in app config) or OpenAI—your key, your choice |
+| **Data (optional)** | Postgres via Drizzle when you want file metadata and history across sessions |
+
+Rough mental model: **Next.js** is the app most people touch; **FastAPI** is there when you want the full Python pipeline locally or behind `BACKEND_URL`. File storage and “no DB” flows are documented in [`docs/STORAGE.md`](docs/STORAGE.md).
+
+---
+
+## Folder map (the short version)
+
+```
+app/           → pages + Next.js API routes
+components/    → UI building blocks
+lib/           → auth, db, upload/analyze helpers
+backend/       → FastAPI app (routes, services, MCP helpers)
+scripts/       → dev startup helpers
+docs/          → security, storage notes
 ```
 
 ---
 
-## 🏗️ **Architecture**
+## Deploying (e.g. Vercel)
 
-### **Tech Stack**
-- **Frontend**: Next.js 15 with App Router, TypeScript, Tailwind CSS, Shadcn UI
-- **Backend**: FastAPI (Python) with OpenAI integration and Pandas
-- **AI**: OpenAI GPT-4o-mini for intelligent analysis
-- **Charts**: Recharts for data visualization
-
-### **System Architecture**
-```
-Frontend (Next.js) ←→ Backend (FastAPI) ←→ OpenAI API
-     ↓                    ↓
-  Shadcn UI         Pandas/CSV Processing
-  Recharts          File Storage (Local)
-  TypeScript        AI Analysis Engine
-```
-
-### **Repo structure**
-```
-datrep/
-├── app/              # Next.js app (pages, API routes)
-├── components/       # UI (file-uploader, data-table, chart-renderer, chat-interface, ui/)
-├── lib/              # Shared logic (auth, db, upload, analyze)
-├── backend/          # FastAPI (routes/, services/, mcp/, models/)
-├── scripts/          # start-dev.py, start-dev.bat
-├── docs/             # SECURITY.md
-├── .env.example      # Single env template (frontend + backend)
-└── package.json
-```
+Ship the Next app on Vercel, set env vars from `.env.example`, add **Blob** if files can be large, and point `BACKEND_URL` at your FastAPI host if you use it. Postgres is optional; without it, you can still run upload → analyze in one session if Blob + keys are set—details in `docs/STORAGE.md`.
 
 ---
 
-## 🎯 **Current Status**
+## Contributing & safety
 
-### **✅ Completed Features**
-- **Premium UI/UX**: Professional, clean design with excellent user experience
-- **File Upload**: Drag-and-drop interface with validation (up to 100MB)
-- **Analysis Dashboard**: Comprehensive view with tabs, insights, and charts
-- **Chat Interface**: Interactive AI chat for data questions
-- **Responsive Design**: Works beautifully on all devices
-- **Enhanced AI**: Specific, engaging insights based on actual data
-
-### **🚀 Recent Improvements**
-- **Enhanced AI Integration**: Real dataset-specific insights with engaging responses
-- **Large File Support**: Up to 100MB file uploads
-- **Unified Startup**: Single script to start both frontend and backend
-- **Performance Optimization**: 50% reduction in token usage
+PRs welcome. Please skim [`docs/SECURITY.md`](docs/SECURITY.md) before you wire anything sensitive.
 
 ---
 
-## 🤝 **Contributing**
+## License
 
-We welcome contributions. Review [docs/SECURITY.md](docs/SECURITY.md) before submitting.
-
----
-
-## 📄 **License**
-
-MIT License - see [LICENSE.md](LICENSE.md) for details.
+MIT — see [`LICENSE.md`](LICENSE.md).
 
 ---
 
-**DatRep** is designed to make data analysis accessible, engaging, and powerful for everyone. The combination of modern web technologies, AI integration, and user-focused design creates a platform that transforms how people interact with their data.
-
-*Built with ❤️ using Next.js, FastAPI, and OpenAI*
+*Made for people who like their data messy and their explanations clear.*
